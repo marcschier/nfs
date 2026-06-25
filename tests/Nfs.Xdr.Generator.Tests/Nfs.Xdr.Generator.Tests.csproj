@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The annotated test fixtures are wire DTOs that intentionally use public fields. -->
+    <NoWarn>$(NoWarn);CA1051</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nfs.Xdr\Nfs.Xdr.csproj" />
+    <ProjectReference Include="..\..\src\Nfs.Xdr.SourceGenerator\Nfs.Xdr.SourceGenerator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
+

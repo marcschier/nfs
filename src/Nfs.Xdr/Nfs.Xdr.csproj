@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>XDR (External Data Representation, RFC 4506) encoding primitives for the Nfs protocol stack.</Description>
+  </PropertyGroup>
+
+</Project>

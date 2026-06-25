@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nfs.Server\Nfs.Server.csproj" />
+    <ProjectReference Include="..\..\src\Nfs.Client\Nfs.Client.csproj" />
+    <ProjectReference Include="..\..\src\Nfs.Nlm\Nfs.Nlm.csproj" />
+    <ProjectReference Include="..\..\src\Nfs.Nsm\Nfs.Nsm.csproj" />
+  </ItemGroup>
+
+</Project>

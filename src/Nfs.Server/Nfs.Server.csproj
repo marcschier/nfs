@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NFS server: hosts a pluggable INfsFileSystem over the ONC/RPC stack.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nfs.Abstractions\Nfs.Abstractions.csproj" />
+    <ProjectReference Include="..\Nfs.Rpc\Nfs.Rpc.csproj" />
+    <ProjectReference Include="..\Nfs.Protocol.V3\Nfs.Protocol.V3.csproj" />
+    <ProjectReference Include="..\Nfs.Protocol.V2\Nfs.Protocol.V2.csproj" />
+    <ProjectReference Include="..\Nfs.Protocol.V4\Nfs.Protocol.V4.csproj" />
+    <ProjectReference Include="..\Nfs.Mount\Nfs.Mount.csproj" />
+    <ProjectReference Include="..\Nfs.Nlm\Nfs.Nlm.csproj" />
+    <ProjectReference Include="..\Nfs.Nsm\Nfs.Nsm.csproj" />
+  </ItemGroup>
+
+</Project>

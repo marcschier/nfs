@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PublishAot>true</PublishAot>
+    <Description>Runs an in-memory NFSv3 server and drives it with the NFS client over TCP.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nfs.Server\Nfs.Server.csproj" />
+    <ProjectReference Include="..\..\src\Nfs.Client\Nfs.Client.csproj" />
+  </ItemGroup>
+
+</Project>

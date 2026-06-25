@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Cross-cutting NFS contracts (status codes, file handles, attributes) shared by the client, server, and protocol layers.</Description>
+  </PropertyGroup>
+
+</Project>

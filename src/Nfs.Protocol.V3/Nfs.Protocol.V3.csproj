@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NFS version 3 (RFC 1813) wire types.</Description>
+    <!-- Wire DTOs intentionally expose byte[] opaque members. -->
+    <NoWarn>$(NoWarn);CA1819;CA1051</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nfs.Xdr\Nfs.Xdr.csproj" />
+    <ProjectReference Include="..\Nfs.Abstractions\Nfs.Abstractions.csproj" />
+    <ProjectReference Include="..\Nfs.Xdr.SourceGenerator\Nfs.Xdr.SourceGenerator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,89 @@
+# Promotes already-published packages from the GitHub Packages feed to nuget.org
+# using NuGet trusted publishing (OIDC, no long-lived API key).
+#
+# Prerequisites (one-time, owner action — not automatable here):
+#   1. nuget.org -> Account -> Trusted Publishing -> Add policy:
+#        Repository Owner: marcschier
+#        Repository:       nfs
+#        Workflow File:    nuget.yml
+#        Environment:      release
+#   2. GitHub repo -> Settings -> Environments -> New environment "release",
+#      add an environment secret NUGET_USER = your nuget.org profile name (NOT email).
+#   3. The package(s) must already exist on the GitHub Packages feed (the ci.yml
+#      `publish-github` job pushes them on a `v*` tag).
+name: Publish to NuGet.org
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to promote from the GitHub feed (blank = latest on the feed)."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuget-publish
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promote GitHub Packages -> nuget.org
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      packages: read
+      id-token: write # Required for NuGet trusted publishing (OIDC).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Download packages from the GitHub Packages feed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p promote
+          # Discover the flat-container (PackageBaseAddress) resource from the service index.
+          base=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            https://nuget.pkg.github.com/marcschier/index.json \
+            | jq -r '.resources[] | select(."@type"|test("^PackageBaseAddress")) | ."@id"')
+          base="${base%/}"
+          echo "PackageBaseAddress: $base"
+          # Derive the packable library ids from src/ (skip IsPackable=false projects).
+          for proj in src/*/*.csproj; do
+            grep -q '<IsPackable>false</IsPackable>' "$proj" && continue
+            id=$(basename "$proj" .csproj)
+            idl=$(echo "$id" | tr '[:upper:]' '[:lower:]')
+            versions=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$base/$idl/index.json" | jq -r '.versions[]')
+            if [ -n "${INPUT_VERSION}" ]; then
+              ver="${INPUT_VERSION}"
+            else
+              ver=$(echo "$versions" | tail -n 1)
+            fi
+            verl=$(echo "$ver" | tr '[:upper:]' '[:lower:]')
+            echo "Downloading $id $ver"
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              "$base/$idl/$verl/$idl.$verl.nupkg" -o "promote/$id.$ver.nupkg"
+          done
+          echo "Packages to promote:"
+          ls -l promote
+
+      - name: NuGet login (OIDC)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }} # nuget.org profile name, NOT email.
+
+      - name: Push to nuget.org
+        run: >
+          dotnet nuget push "promote/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
+          --skip-duplicate

@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Nerdbank.GitVersioning needs the full history.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore
+        run: dotnet restore Nfs.slnx
+      - name: Build
+        run: dotnet build Nfs.slnx -c Release --no-restore
+      - name: Test
+        run: dotnet test Nfs.slnx -c Release --no-build
+
+  lint:
+    name: format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Verify formatting
+        run: dotnet format Nfs.slnx --verify-no-changes --severity warn
+
+  aot-smoke:
+    name: NativeAOT publish smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install native toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Publish the NFSv3 loopback demo with NativeAOT
+        run: dotnet publish samples/Nfs.Nfsv3Loopback/Nfs.Nfsv3Loopback.csproj -c Release -r linux-x64
+      - name: Run the published native binary
+        run: ./samples/Nfs.Nfsv3Loopback/bin/Release/net10.0/linux-x64/publish/Nfs.Nfsv3Loopback
+
+  publish-github:
+    name: publish to GitHub Packages
+    needs: [ build-test, lint, aot-smoke ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Nerdbank.GitVersioning needs the full history.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Pack
+        run: dotnet pack Nfs.slnx -c Release -o artifacts
+      - name: Push to GitHub Packages
+        run: >
+          dotnet nuget push "artifacts/*.nupkg"
+          --source https://nuget.pkg.github.com/marcschier/index.json
+          --api-key ${{ secrets.GITHUB_TOKEN }}
+          --skip-duplicate

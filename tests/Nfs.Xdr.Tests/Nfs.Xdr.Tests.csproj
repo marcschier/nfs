@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nfs.Xdr\Nfs.Xdr.csproj" />
+  </ItemGroup>
+
+</Project>

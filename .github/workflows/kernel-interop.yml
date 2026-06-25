@@ -1,0 +1,65 @@
+name: Kernel NFS interop
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-interop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel-interop:
+    name: kernel mount + rpcbind
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install NFS client tools and rpcbind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nfs-common rpcbind
+          sudo systemctl start rpcbind || sudo service rpcbind start || true
+          if ! rpcinfo -p 127.0.0.1; then
+            sudo rpcbind -w
+            rpcinfo -p 127.0.0.1
+          fi
+      - name: Restore
+        run: dotnet restore Nfs.slnx
+      - name: Publish local-disk server
+        run: >
+          dotnet publish samples/Nfs.LocalDiskServer/Nfs.LocalDiskServer.csproj
+          -c Release
+          --no-restore
+          -p:PublishAot=false
+          -o eng/interop/.kernel-mount-publish
+      - name: Run NFSv3 kernel mount and rpcbind interop
+        env:
+          SERVER_DLL: ${{ github.workspace }}/eng/interop/.kernel-mount-publish/Nfs.LocalDiskServer.dll
+          NFS_PORT: 20490
+          MOUNT_PORT: 20491
+          NFS_VERSION: 3
+          MOUNT_DIR: /mnt/nfstest
+          REQUIRE_RPCBIND: 1
+        run: bash eng/interop/kernel-mount.sh
+      - name: Best-effort NFSv4.1 delegation recall over back channel
+        continue-on-error: true
+        env:
+          SERVER_DLL: ${{ github.workspace }}/eng/interop/.kernel-mount-publish/Nfs.LocalDiskServer.dll
+          NFS_PORT: 20492
+          MOUNT_PORT: 20493
+          NFS_VERSION: 4.1
+          MOUNT_DIR: /mnt/nfstest41
+          SECOND_MOUNT_DIR: /mnt/nfstest41b
+          REGISTER: 0
+          PROVOKE_DELEGATION_RECALL: 1
+        run: bash eng/interop/kernel-mount.sh

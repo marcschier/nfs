@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PublishAot>true</PublishAot>
+    <Description>NativeAOT publish smoke test for the Nfs solution.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nfs.Xdr\Nfs.Xdr.csproj" />
+    <ProjectReference Include="..\..\src\Nfs.Rpc\Nfs.Rpc.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>High-level NFS client built on the ONC/RPC stack and the NFS protocol types.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nfs.Rpc\Nfs.Rpc.csproj" />
+    <ProjectReference Include="..\Nfs.Protocol.V3\Nfs.Protocol.V3.csproj" />
+    <ProjectReference Include="..\Nfs.Protocol.V2\Nfs.Protocol.V2.csproj" />
+    <ProjectReference Include="..\Nfs.Protocol.V4\Nfs.Protocol.V4.csproj" />
+    <ProjectReference Include="..\Nfs.Mount\Nfs.Mount.csproj" />
+    <ProjectReference Include="..\Nfs.Nlm\Nfs.Nlm.csproj" />
+    <ProjectReference Include="..\Nfs.Nsm\Nfs.Nsm.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,37 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Nfs.Benchmarks/Nfs.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Nfs.AotSmoke/Nfs.AotSmoke.csproj" />
+    <Project Path="samples/Nfs.LocalDiskServer/Nfs.LocalDiskServer.csproj" />
+    <Project Path="samples/Nfs.Nfsv3Loopback/Nfs.Nfsv3Loopback.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Nfs.Abstractions/Nfs.Abstractions.csproj" />
+    <Project Path="src/Nfs.Client/Nfs.Client.csproj" />
+    <Project Path="src/Nfs.Mount/Nfs.Mount.csproj" />
+    <Project Path="src/Nfs.Nlm/Nfs.Nlm.csproj" />
+    <Project Path="src/Nfs.Nsm/Nfs.Nsm.csproj" />
+    <Project Path="src/Nfs.Protocol.V3/Nfs.Protocol.V3.csproj" />
+    <Project Path="src/Nfs.Protocol.V2/Nfs.Protocol.V2.csproj" />
+    <Project Path="src/Nfs.Protocol.V4/Nfs.Protocol.V4.csproj" />
+    <Project Path="src/Nfs.Rpc/Nfs.Rpc.csproj" />
+    <Project Path="src/Nfs.Server/Nfs.Server.csproj" />
+    <Project Path="src/Nfs.Xdr.SourceGenerator/Nfs.Xdr.SourceGenerator.csproj" />
+    <Project Path="src/Nfs.Xdr/Nfs.Xdr.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Nfs.Abstractions.Tests/Nfs.Abstractions.Tests.csproj" />
+    <Project Path="tests/Nfs.Client.Tests/Nfs.Client.Tests.csproj" />
+    <Project Path="tests/Nfs.Protocol.V3.Tests/Nfs.Protocol.V3.Tests.csproj" />
+    <Project Path="tests/Nfs.Protocol.V2.Tests/Nfs.Protocol.V2.Tests.csproj" />
+    <Project Path="tests/Nfs.Protocol.V4.Tests/Nfs.Protocol.V4.Tests.csproj" />
+    <Project Path="tests/Nfs.Rpc.Tests/Nfs.Rpc.Tests.csproj" />
+    <Project Path="tests/Nfs.Server.Tests/Nfs.Server.Tests.csproj" />
+    <Project Path="tests/Nfs.Xdr.Generator.Tests/Nfs.Xdr.Generator.Tests.csproj" />
+    <Project Path="tests/Nfs.Xdr.Tests/Nfs.Xdr.Tests.csproj" />
+    <Project Path="tests/Nfs.Nlm.Tests/Nfs.Nlm.Tests.csproj" />
+    <Project Path="tests/Nfs.Nsm.Tests/Nfs.Nsm.Tests.csproj" />
+  </Folder>
+</Solution>

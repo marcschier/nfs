@@ -1,0 +1,14 @@
+Exporting '/mnt/d/git/marcschier/Nfs/eng/interop/.run-interop-work/export' as '/export'.
+NFS   (v2/v3/v4) listening on 0.0.0.0:12049.
+MOUNT            listening on 0.0.0.0:12050.
+
+From a Linux client (matching the ports above):
+  sudo mount -t nfs -o vers=3,tcp,port=12049,mountport=12050,nolock <server>:/export /mnt/point
+
+Self-check:
+  MOUNT /export -> handle (8 bytes)
+  READDIR / -> readme.txt
+  READ readme.txt -> "Hello from the Nfs local-disk server!"
+  OK
+
+Serving. Press Ctrl+C to stop.

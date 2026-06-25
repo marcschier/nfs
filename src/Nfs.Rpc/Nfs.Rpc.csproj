@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>ONC/RPC (RFC 5531) message framing and authentication for the Nfs stack.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nfs.Xdr\Nfs.Xdr.csproj" />
+    <ProjectReference Include="..\Nfs.Xdr.SourceGenerator\Nfs.Xdr.SourceGenerator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

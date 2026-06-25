@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nfs.Protocol.V3\Nfs.Protocol.V3.csproj" />
+  </ItemGroup>
+
+</Project>

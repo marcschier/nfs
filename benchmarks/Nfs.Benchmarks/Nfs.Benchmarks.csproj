@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <Description>BenchmarkDotNet benchmarks for NFS loopback RPC and XDR hot paths.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Nfs.Client\Nfs.Client.csproj" />
+    <ProjectReference Include="..\..\src\Nfs.Server\Nfs.Server.csproj" />
+  </ItemGroup>
+
+</Project>
