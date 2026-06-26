@@ -75,6 +75,25 @@ jobs:
           echo "Packages to promote:"
           ls -l promote
 
+      - name: Guard — ensure only the Nfs umbrella is staged
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(promote/*.nupkg)
+          if [ "${#pkgs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one package (the Nfs umbrella) to promote, found ${#pkgs[@]}:"
+            ls -1 promote/ || true
+            exit 1
+          fi
+          name=$(basename "${pkgs[0]}")
+          # The umbrella file is `Nfs.<version>.nupkg`; granular packages are `Nfs.Client.<version>.nupkg` etc.
+          # Requiring a digit right after `Nfs.` excludes every granular package id.
+          if ! echo "$name" | grep -Eq '^Nfs\.[0-9].*\.nupkg$'; then
+            echo "::error::Staged package '$name' is not the Nfs umbrella; refusing to publish to nuget.org."
+            exit 1
+          fi
+          echo "Guard OK: promoting only '$name' to nuget.org."
+
       - name: NuGet login (OIDC)
         id: login
         uses: NuGet/login@v1
