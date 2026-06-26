@@ -255,8 +255,8 @@ public sealed class RpcServer : IAsyncDisposable
         OpaqueAuth verifier = OpaqueAuth.None;
         if (rpcSecGssContext is not null)
         {
-            payload = RpcSecGssServer.ProtectReply(payload, rpcSecGssContext);
             verifier = RpcSecGssServer.CreateReplyVerifier(rpcSecGssContext);
+            payload = RpcSecGssServer.ProtectReply(payload, rpcSecGssContext);
         }
 
         return RpcMessageCodec.EncodeReply(header.Xid, payload, verifier);

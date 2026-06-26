@@ -101,15 +101,15 @@ public sealed class RpcSecGssClientContext
         where TArgs : IXdrSerializable<TArgs>
     {
         uint sequenceNumber = _nextSequenceNumber++;
-        byte[] plainArguments = RpcSecGssWire.EncodePlainArguments(arguments);
-        byte[] protectedArguments = RpcSecGssWire.ProtectData(
-            _context, service, sequenceNumber, plainArguments);
         OpaqueAuth credential = RpcSecGssWire.CreateCredential(
             RpcSecGssProcedure.Data, sequenceNumber, service, Handle.Span);
         var header = new RpcCallHeader(
             xid, program, version, procedure, credential, OpaqueAuth.None);
         byte[] headerPrefix = RpcMessageCodec.EncodeCallHeaderPrefix(header);
         OpaqueAuth verifier = new(AuthFlavor.RpcSecGss, _context.GetMic(headerPrefix));
+        byte[] plainArguments = RpcSecGssWire.EncodePlainArguments(arguments);
+        byte[] protectedArguments = RpcSecGssWire.ProtectData(
+            _context, service, sequenceNumber, plainArguments);
         return new RpcSecGssClientCall(
             credential, verifier, new RpcSecGssRawBody(protectedArguments), sequenceNumber, service);
     }
