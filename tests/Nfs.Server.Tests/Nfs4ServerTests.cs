@@ -199,6 +199,104 @@ public sealed class Nfs4ServerTests
     }
 
     [Fact]
+    public async Task Commit_AfterWrite_ReturnsMatchingVerifier_AndDirectoryFails()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        NfsFileHandle file = fileSystem.CreateFile(fileSystem.Root, "commit.bin", []);
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        var wire = new Nfs4Handle { Data = file.ToArray() };
+
+        Nfs4CompoundResult write = await nfs.CompoundAsync(
+            "write-commit",
+            [
+                new Nfs4PutFhOp { Handle = wire },
+                new Nfs4WriteOp { Offset = 0, Data = "stable"u8.ToArray(), Stable = 2 },
+                new Nfs4CommitOp { Offset = 0, Count = 0 },
+            ],
+            Token);
+
+        Assert.Equal(Nfs4Status.Ok, write.Status);
+        Nfs4WriteResult writeResult = Assert.IsType<Nfs4WriteResult>(write.Operations[1]);
+        Nfs4CommitResult commitResult = Assert.IsType<Nfs4CommitResult>(write.Operations[2]);
+        Assert.Equal(writeResult.Verifier, commitResult.Verifier);
+
+        Nfs4CompoundResult directoryCommit = await nfs.CompoundAsync(
+            "commit-dir",
+            [new Nfs4PutRootFhOp(), new Nfs4CommitOp()],
+            Token);
+
+        Assert.Equal(Nfs4Status.IsDirectory, directoryCommit.Status);
+    }
+
+    [Fact]
+    public async Task Link_UsesSavedFileHandleAsSource_AndCurrentFileHandleAsDirectory()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        NfsFileHandle file = fileSystem.CreateFile(fileSystem.Root, "original.txt", "linked-data"u8.ToArray());
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        var wire = new Nfs4Handle { Data = file.ToArray() };
+
+        Nfs4CompoundResult link = await nfs.CompoundAsync(
+            "link",
+            [
+                new Nfs4PutFhOp { Handle = wire },
+                new Nfs4SaveFhOp(),
+                new Nfs4PutRootFhOp(),
+                new Nfs4LinkOp { NewName = "hardname.txt" },
+                new Nfs4LookupOp { Name = "hardname.txt" },
+                new Nfs4GetFhOp(),
+                new Nfs4ReadOp { Offset = 0, Count = 1024 },
+            ],
+            Token);
+
+        Assert.Equal(Nfs4Status.Ok, link.Status);
+        Assert.IsType<Nfs4LinkResult>(link.Operations[3]);
+        Assert.Equal(wire.Data, Assert.IsType<Nfs4GetFhResult>(link.Operations[5]).Handle.Data);
+        Assert.Equal("linked-data"u8.ToArray(), Assert.IsType<Nfs4ReadResult>(link.Operations[6]).Data);
+    }
+
+    [Fact]
+    public async Task OpenAttr_ReadDirListsExtendedAttributes_AndLookupReadsNamedAttribute()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        NfsFileHandle file = fileSystem.CreateFile(fileSystem.Root, "xattrs.txt", [1]);
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        var wire = new Nfs4Handle { Data = file.ToArray() };
+        byte[] value = "note-value"u8.ToArray();
+
+        Nfs4CompoundResult result = await nfs.CompoundAsync(
+            "openattr",
+            [
+                new Nfs4PutFhOp { Handle = wire },
+                new Nfs4SetXattrOp { Name = "user.note", Value = value },
+                new Nfs4OpenAttrOp { CreateDirectory = true },
+                new Nfs4ReadDirOp
+                {
+                    Cookie = 0,
+                    DirectoryCount = 8192,
+                    MaxCount = 32768,
+                    Request = Nfs4Bitmap.Of(Nfs4AttributeId.Type, Nfs4AttributeId.Size),
+                },
+                new Nfs4LookupOp { Name = "user.note" },
+                new Nfs4GetAttrOp { Request = Nfs4Bitmap.Of(Nfs4AttributeId.Type, Nfs4AttributeId.Size) },
+                new Nfs4ReadOp { Offset = 0, Count = 1024 },
+            ],
+            Token);
+
+        Assert.Equal(Nfs4Status.Ok, result.Status);
+        Nfs4ReadDirResult readDir = Assert.IsType<Nfs4ReadDirResult>(result.Operations[3]);
+        Assert.Contains(readDir.Entries, static entry => entry.Name == "user.note");
+        Nfs4FileAttributes attributes = Nfs4FileAttributes.Decode(
+            Assert.IsType<Nfs4GetAttrResult>(result.Operations[5]).Attributes);
+        Assert.Equal(Nfs4FileType.NamedAttribute, attributes.Type);
+        Assert.Equal((ulong)value.Length, attributes.Size);
+        Assert.Equal(value, Assert.IsType<Nfs4ReadResult>(result.Operations[6]).Data);
+    }
+
+    [Fact]
     public async Task Create_Directory_ThenLookup()
     {
         var fileSystem = new InMemoryFileSystem();

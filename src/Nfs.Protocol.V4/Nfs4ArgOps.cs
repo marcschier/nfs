@@ -192,6 +192,26 @@ public sealed class Nfs4AccessOp : Nfs4ArgOp
     public override void Encode(ref XdrWriter writer) => writer.WriteUInt32(Access);
 }
 
+/// <summary>COMMIT: commit cached data for the current file handle.</summary>
+public sealed class Nfs4CommitOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the byte offset to commit.</summary>
+    public ulong Offset { get; set; }
+
+    /// <summary>Gets or sets the byte count to commit; zero means through end-of-file.</summary>
+    public uint Count { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.Commit;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteUInt64(Offset);
+        writer.WriteUInt32(Count);
+    }
+}
+
 /// <summary>READ: read data from the current file handle.</summary>
 public sealed class Nfs4ReadOp : Nfs4ArgOp
 {
@@ -307,6 +327,32 @@ public sealed class Nfs4RenameOp : Nfs4ArgOp
         writer.WriteString(OldName);
         writer.WriteString(NewName);
     }
+}
+
+/// <summary>LINK: create a hard link in the current directory to the saved file handle.</summary>
+public sealed class Nfs4LinkOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the name of the new directory entry.</summary>
+    public string NewName { get; set; } = string.Empty;
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.Link;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer) => writer.WriteString(NewName);
+}
+
+/// <summary>OPENATTR: open the named-attribute directory for the current file handle.</summary>
+public sealed class Nfs4OpenAttrOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets whether the attribute directory should be created if needed.</summary>
+    public bool CreateDirectory { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.OpenAttr;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer) => writer.WriteBool(CreateDirectory);
 }
 
 /// <summary>SETATTR: set attributes on the current file handle.</summary>

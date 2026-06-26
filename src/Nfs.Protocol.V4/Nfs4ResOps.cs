@@ -174,6 +174,35 @@ public sealed class Nfs4AccessResult : Nfs4ResOp
     }
 }
 
+/// <summary>The result of COMMIT (the server write verifier on success).</summary>
+public sealed class Nfs4CommitResult : Nfs4ResOp
+{
+    /// <summary>Gets or sets the write verifier (8 bytes).</summary>
+    public byte[] Verifier { get; set; } = new byte[Nfs4.VerifierSize];
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.Commit;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteInt32((int)Status);
+        if (IsSuccess)
+        {
+            writer.WriteOpaqueFixed(Verifier);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void DecodeResok(ref XdrReader reader)
+    {
+        if (IsSuccess)
+        {
+            Verifier = reader.ReadOpaqueFixed(Nfs4.VerifierSize).ToArray();
+        }
+    }
+}
+
 /// <summary>The result of SECINFO and SECINFO_NO_NAME.</summary>
 public sealed class Nfs4SecInfoResult : Nfs4ResOp
 {
@@ -454,6 +483,35 @@ public sealed class Nfs4RenameResult : Nfs4ResOp
         {
             Source = Nfs4ChangeInfo.ReadFrom(ref reader);
             Target = Nfs4ChangeInfo.ReadFrom(ref reader);
+        }
+    }
+}
+
+/// <summary>The result of LINK (directory change information on success).</summary>
+public sealed class Nfs4LinkResult : Nfs4ResOp
+{
+    /// <summary>Gets or sets the target directory change information.</summary>
+    public Nfs4ChangeInfo ChangeInfo { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.Link;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteInt32((int)Status);
+        if (IsSuccess)
+        {
+            ChangeInfo.WriteTo(ref writer);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void DecodeResok(ref XdrReader reader)
+    {
+        if (IsSuccess)
+        {
+            ChangeInfo = Nfs4ChangeInfo.ReadFrom(ref reader);
         }
     }
 }

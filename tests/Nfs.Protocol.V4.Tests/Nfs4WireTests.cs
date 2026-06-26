@@ -198,6 +198,53 @@ public sealed class Nfs4WireTests
     }
 
     [Fact]
+    public void CommitLinkOpenAttrOperations_RoundTrip()
+    {
+        var args = new Nfs4CompoundArgs { Tag = "m30", MinorVersion = Nfs4.MinorVersion0 };
+        args.Operations.Add(new Nfs4CommitOp { Offset = 42, Count = 4096 });
+        args.Operations.Add(new Nfs4LinkOp { NewName = "hardname" });
+        args.Operations.Add(new Nfs4OpenAttrOp { CreateDirectory = true });
+
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        var writer = new XdrWriter(buffer);
+        args.WriteTo(ref writer);
+
+        var reader = new XdrReader(buffer.WrittenSpan);
+        Nfs4CompoundArgs decoded = Nfs4CompoundArgs.ReadFrom(ref reader);
+
+        Nfs4CommitOp commit = Assert.IsType<Nfs4CommitOp>(decoded.Operations[0]);
+        Assert.Equal(42ul, commit.Offset);
+        Assert.Equal(4096u, commit.Count);
+        Assert.Equal("hardname", Assert.IsType<Nfs4LinkOp>(decoded.Operations[1]).NewName);
+        Assert.True(Assert.IsType<Nfs4OpenAttrOp>(decoded.Operations[2]).CreateDirectory);
+    }
+
+    [Fact]
+    public void CommitAndLinkResults_RoundTrip()
+    {
+        byte[] verifier = [1, 2, 3, 4, 5, 6, 7, 8];
+        var result = new Nfs4CompoundResult { Status = Nfs4Status.Ok, Tag = "m30-result" };
+        result.Operations.Add(new Nfs4CommitResult { Status = Nfs4Status.Ok, Verifier = verifier });
+        result.Operations.Add(new Nfs4LinkResult
+        {
+            Status = Nfs4Status.Ok,
+            ChangeInfo = new Nfs4ChangeInfo { Atomic = false, Before = 10, After = 11 },
+        });
+
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        var writer = new XdrWriter(buffer);
+        result.WriteTo(ref writer);
+
+        var reader = new XdrReader(buffer.WrittenSpan);
+        Nfs4CompoundResult decoded = Nfs4CompoundResult.ReadFrom(ref reader);
+
+        Assert.Equal(verifier, Assert.IsType<Nfs4CommitResult>(decoded.Operations[0]).Verifier);
+        Nfs4LinkResult link = Assert.IsType<Nfs4LinkResult>(decoded.Operations[1]);
+        Assert.Equal(10ul, link.ChangeInfo.Before);
+        Assert.Equal(11ul, link.ChangeInfo.After);
+    }
+
+    [Fact]
     public void OpenDowngradeResult_RoundTrips()
     {
         var stateId = new Nfs4StateId { Sequence = 2, Other = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] };

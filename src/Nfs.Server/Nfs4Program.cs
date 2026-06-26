@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
 
 using Nfs.Abstractions;
 using Nfs.Protocol.V4;
@@ -199,13 +200,17 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
                 Nfs4VerifyOp verify => await VerifyAsync(context, verify, cancellationToken).ConfigureAwait(false),
                 Nfs4NverifyOp nverify => await NverifyAsync(context, nverify, cancellationToken).ConfigureAwait(false),
                 Nfs4AccessOp access => await AccessAsync(context, access, cancellationToken).ConfigureAwait(false),
+                Nfs4CommitOp commit => await CommitAsync(context, commit, cancellationToken).ConfigureAwait(false),
                 Nfs4ReadOp read => await ReadAsync(context, read, cancellationToken).ConfigureAwait(false),
                 Nfs4WriteOp write => await WriteAsync(context, write, cancellationToken).ConfigureAwait(false),
                 Nfs4ReadLinkOp => await ReadLinkAsync(context, cancellationToken).ConfigureAwait(false),
                 Nfs4ReadDirOp readDir => await ReadDirAsync(context, readDir, cancellationToken).ConfigureAwait(false),
                 Nfs4RemoveOp remove => await RemoveAsync(context, remove, cancellationToken).ConfigureAwait(false),
+                Nfs4LinkOp link => await LinkAsync(context, link, cancellationToken).ConfigureAwait(false),
                 Nfs4RenameOp rename => await RenameAsync(context, rename, cancellationToken).ConfigureAwait(false),
                 Nfs4CreateOp create => await CreateAsync(context, create, cancellationToken).ConfigureAwait(false),
+                Nfs4OpenAttrOp openAttr => await OpenAttrAsync(
+                    context, openAttr, cancellationToken).ConfigureAwait(false),
                 Nfs4SetAttrOp setAttr => await SetAttrAsync(context, setAttr, cancellationToken).ConfigureAwait(false),
                 Nfs4SetClientIdOp setClientId => SetClientId(setClientId),
                 Nfs4SetClientIdConfirmOp confirm => SetClientIdConfirm(confirm),
@@ -306,6 +311,14 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             return new Nfs4StatusResult(Nfs4Op.Lookup) { Status = Nfs4Status.NoFileHandle };
         }
 
+        if (TryReadAttributeDirectoryHandle(directory, out NfsFileHandle xattrSource))
+        {
+            _ = await _fileSystem
+                .GetExtendedAttributeAsync(xattrSource, op.Name, cancellationToken).ConfigureAwait(false);
+            context.Current = CreateNamedAttributeHandle(xattrSource, op.Name);
+            return new Nfs4StatusResult(Nfs4Op.Lookup) { Status = Nfs4Status.Ok };
+        }
+
         context.Current = await _fileSystem.LookupAsync(directory, op.Name, cancellationToken).ConfigureAwait(false);
         return new Nfs4StatusResult(Nfs4Op.Lookup) { Status = Nfs4Status.Ok };
     }
@@ -377,6 +390,28 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             return new Nfs4StatusResult(Nfs4Op.GetAttr) { Status = Nfs4Status.NoFileHandle };
         }
 
+        if (TryReadAttributeDirectoryHandle(current, out NfsFileHandle xattrSource))
+        {
+            Nfs4FAttr xattrDirectoryAttributes = BuildSyntheticAttributes(
+                current,
+                Nfs4FileType.AttributeDirectory,
+                size: 0,
+                change: await ChangeOfAsync(xattrSource, cancellationToken).ConfigureAwait(false)).Encode(op.Request);
+            return new Nfs4GetAttrResult { Status = Nfs4Status.Ok, Attributes = xattrDirectoryAttributes };
+        }
+
+        if (TryReadNamedAttributeHandle(current, out NfsFileHandle namedSource, out string name))
+        {
+            byte[] value = await _fileSystem
+                .GetExtendedAttributeAsync(namedSource, name, cancellationToken).ConfigureAwait(false);
+            Nfs4FAttr namedAttributeAttributes = BuildSyntheticAttributes(
+                current,
+                Nfs4FileType.NamedAttribute,
+                (ulong)value.Length,
+                change: await ChangeOfAsync(namedSource, cancellationToken).ConfigureAwait(false)).Encode(op.Request);
+            return new Nfs4GetAttrResult { Status = Nfs4Status.Ok, Attributes = namedAttributeAttributes };
+        }
+
         NfsFileAttributes attributes = await _fileSystem
             .GetAttributesAsync(current, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<NfsAccessControlEntry>? acl = op.Request.IsSet(Nfs4AttributeId.Acl)
@@ -441,6 +476,37 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         return new Nfs4AccessResult { Status = Nfs4Status.Ok, Supported = supported, Access = supported };
     }
 
+    private async ValueTask<Nfs4ResOp> CommitAsync(
+        CompoundContext context,
+        Nfs4CommitOp op,
+        CancellationToken cancellationToken)
+    {
+        if (context.Current is not { } current)
+        {
+            return new Nfs4CommitResult { Status = Nfs4Status.NoFileHandle };
+        }
+
+        if (TryReadSyntheticHandle(current))
+        {
+            return new Nfs4CommitResult { Status = Nfs4Status.InvalidArgument };
+        }
+
+        NfsFileAttributes attributes = await _fileSystem.GetAttributesAsync(current, cancellationToken).ConfigureAwait(false);
+        if (attributes.Type == NfsFileType.Directory)
+        {
+            return new Nfs4CommitResult { Status = Nfs4Status.IsDirectory };
+        }
+
+        if (attributes.Type != NfsFileType.Regular)
+        {
+            return new Nfs4CommitResult { Status = Nfs4Status.InvalidArgument };
+        }
+
+        _ = op.Offset;
+        _ = op.Count;
+        return new Nfs4CommitResult { Status = Nfs4Status.Ok, Verifier = _writeVerifier };
+    }
+
     private async ValueTask<Nfs4ResOp> ReadAsync(
         CompoundContext context,
         Nfs4ReadOp op,
@@ -449,6 +515,30 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         if (context.Current is not { } current)
         {
             return new Nfs4StatusResult(Nfs4Op.Read) { Status = Nfs4Status.NoFileHandle };
+        }
+
+        if (TryReadNamedAttributeHandle(current, out NfsFileHandle namedSource, out string name))
+        {
+            byte[] value = await _fileSystem
+                .GetExtendedAttributeAsync(namedSource, name, cancellationToken).ConfigureAwait(false);
+            if (op.Offset >= (ulong)value.Length)
+            {
+                return new Nfs4ReadResult { Status = Nfs4Status.Ok, Eof = true, Data = [] };
+            }
+
+            int start = (int)op.Offset;
+            int length = (int)Math.Min(op.Count, (uint)(value.Length - start));
+            return new Nfs4ReadResult
+            {
+                Status = Nfs4Status.Ok,
+                Eof = start + length >= value.Length,
+                Data = value.AsSpan(start, length).ToArray(),
+            };
+        }
+
+        if (TryReadAttributeDirectoryHandle(current, out _))
+        {
+            return new Nfs4ReadResult { Status = Nfs4Status.IsDirectory };
         }
 
         if (IsOffloadStateId(op.StateId))
@@ -540,6 +630,41 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             return new Nfs4StatusResult(Nfs4Op.ReadDir) { Status = Nfs4Status.NoFileHandle };
         }
 
+        if (TryReadAttributeDirectoryHandle(current, out NfsFileHandle xattrSource))
+        {
+            NfsExtendedAttributeListing xattrListing = await _fileSystem
+                .ListExtendedAttributesAsync(xattrSource, op.Cookie, op.DirectoryCount, cancellationToken)
+                .ConfigureAwait(false);
+            var xattrEntries = new Nfs4DirEntry[xattrListing.Names.Count];
+            ulong change = await ChangeOfAsync(xattrSource, cancellationToken).ConfigureAwait(false);
+            for (int i = 0; i < xattrEntries.Length; i++)
+            {
+                string name = xattrListing.Names[i];
+                NfsFileHandle handle = CreateNamedAttributeHandle(xattrSource, name);
+                byte[] value = await _fileSystem
+                    .GetExtendedAttributeAsync(xattrSource, name, cancellationToken).ConfigureAwait(false);
+                Nfs4FAttr attributes = BuildSyntheticAttributes(
+                    handle,
+                    Nfs4FileType.NamedAttribute,
+                    (ulong)value.Length,
+                    change).Encode(op.Request);
+                xattrEntries[i] = new Nfs4DirEntry(op.Cookie + (ulong)i + 1, name, attributes);
+            }
+
+            return new Nfs4ReadDirResult
+            {
+                Status = Nfs4Status.Ok,
+                CookieVerifier = new byte[Nfs4.VerifierSize],
+                Entries = xattrEntries,
+                Eof = xattrListing.EndOfList,
+            };
+        }
+
+        if (TryReadNamedAttributeHandle(current, out _, out _))
+        {
+            return new Nfs4ReadDirResult { Status = Nfs4Status.NotDirectory };
+        }
+
         NfsDirectoryListing listing = await _fileSystem
             .ReadDirectoryAsync(current, op.Cookie, op.DirectoryCount, cancellationToken).ConfigureAwait(false);
 
@@ -573,6 +698,26 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             CookieVerifier = new byte[Nfs4.VerifierSize],
             Entries = entries,
             Eof = listing.EndOfStream,
+        };
+    }
+
+    private async ValueTask<Nfs4ResOp> LinkAsync(
+        CompoundContext context,
+        Nfs4LinkOp op,
+        CancellationToken cancellationToken)
+    {
+        if (context.Current is not { } directory || context.Saved is not { } source)
+        {
+            return new Nfs4LinkResult { Status = Nfs4Status.NoFileHandle };
+        }
+
+        ulong before = await ChangeOfAsync(directory, cancellationToken).ConfigureAwait(false);
+        await _fileSystem.CreateHardLinkAsync(source, directory, op.NewName, cancellationToken).ConfigureAwait(false);
+        ulong after = await ChangeOfAsync(directory, cancellationToken).ConfigureAwait(false);
+        return new Nfs4LinkResult
+        {
+            Status = Nfs4Status.Ok,
+            ChangeInfo = new Nfs4ChangeInfo { Atomic = false, Before = before, After = after },
         };
     }
 
@@ -694,6 +839,27 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             ChangeInfo = new Nfs4ChangeInfo { Atomic = false, Before = before, After = after },
             AttributesSet = applied,
         };
+    }
+
+    private async ValueTask<Nfs4StatusResult> OpenAttrAsync(
+        CompoundContext context,
+        Nfs4OpenAttrOp op,
+        CancellationToken cancellationToken)
+    {
+        if (context.Current is not { } current)
+        {
+            return new Nfs4StatusResult(Nfs4Op.OpenAttr) { Status = Nfs4Status.NoFileHandle };
+        }
+
+        if (TryReadSyntheticHandle(current))
+        {
+            return new Nfs4StatusResult(Nfs4Op.OpenAttr) { Status = Nfs4Status.NotSupported };
+        }
+
+        _ = await _fileSystem.GetAttributesAsync(current, cancellationToken).ConfigureAwait(false);
+        _ = op.CreateDirectory;
+        context.Current = CreateAttributeDirectoryHandle(current);
+        return new Nfs4StatusResult(Nfs4Op.OpenAttr) { Status = Nfs4Status.Ok };
     }
 
     private async ValueTask<Nfs4ResOp> SetAttrAsync(
@@ -2127,6 +2293,125 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         return Nfs4Mapping.ChangeId(attributes);
     }
 
+    private static NfsFileHandle CreateAttributeDirectoryHandle(NfsFileHandle source)
+    {
+        int sourceLength = source.Length;
+        if (sourceLength > NfsFileHandle.MaxLength - 4)
+        {
+            throw new NfsException(NfsStatus.BadHandle);
+        }
+
+        byte[] bytes = new byte[4 + sourceLength];
+        bytes[0] = 0x80;
+        bytes[1] = 1;
+        bytes[2] = (byte)sourceLength;
+        source.Span.CopyTo(bytes.AsSpan(4));
+        return new NfsFileHandle(bytes);
+    }
+
+    private static NfsFileHandle CreateNamedAttributeHandle(NfsFileHandle source, string name)
+    {
+        byte[] nameBytes = Encoding.UTF8.GetBytes(name);
+        int sourceLength = source.Length;
+        if (sourceLength > byte.MaxValue || nameBytes.Length > byte.MaxValue ||
+            4 + sourceLength + nameBytes.Length > NfsFileHandle.MaxLength)
+        {
+            throw new NfsException(NfsStatus.NameTooLong);
+        }
+
+        byte[] bytes = new byte[4 + sourceLength + nameBytes.Length];
+        bytes[0] = 0x80;
+        bytes[1] = 2;
+        bytes[2] = (byte)sourceLength;
+        bytes[3] = (byte)nameBytes.Length;
+        source.Span.CopyTo(bytes.AsSpan(4));
+        nameBytes.CopyTo(bytes.AsSpan(4 + sourceLength));
+        return new NfsFileHandle(bytes);
+    }
+
+    private static bool TryReadSyntheticHandle(NfsFileHandle handle) =>
+        handle.Length >= 4 && handle.Span[0] == 0x80;
+
+    private static bool TryReadAttributeDirectoryHandle(NfsFileHandle handle, out NfsFileHandle source)
+    {
+        ReadOnlySpan<byte> span = handle.Span;
+        if (span.Length >= 4 && span[0] == 0x80 && span[1] == 1 && span[3] == 0 &&
+            span[2] == span.Length - 4)
+        {
+            source = new NfsFileHandle(span.Slice(4, span[2]));
+            return true;
+        }
+
+        source = default;
+        return false;
+    }
+
+    private static bool TryReadNamedAttributeHandle(
+        NfsFileHandle handle,
+        out NfsFileHandle source,
+        out string name)
+    {
+        ReadOnlySpan<byte> span = handle.Span;
+        if (span.Length >= 4 && span[0] == 0x80 && span[1] == 2)
+        {
+            int sourceLength = span[2];
+            int nameLength = span[3];
+            if (4 + sourceLength + nameLength == span.Length)
+            {
+                source = new NfsFileHandle(span.Slice(4, sourceLength));
+                name = Encoding.UTF8.GetString(span.Slice(4 + sourceLength, nameLength));
+                return true;
+            }
+        }
+
+        source = default;
+        name = string.Empty;
+        return false;
+    }
+
+    private static Nfs4FileAttributes BuildSyntheticAttributes(
+        NfsFileHandle handle,
+        Nfs4FileType type,
+        ulong size,
+        ulong change)
+    {
+        Nfs4Time now = Nfs4Mapping.ToWire(NfsTimestamp.FromDateTimeOffset(DateTimeOffset.UtcNow));
+        ulong fileId = BinaryPrimitives.ReadUInt64BigEndian(SHA256.HashData(handle.Span).AsSpan(0, sizeof(ulong)));
+        return new Nfs4FileAttributes
+        {
+            SupportedAttributes = Nfs4Mapping.SupportedAttributes,
+            Type = type,
+            FileHandleExpireType = 0,
+            Change = change,
+            Size = size,
+            LinkSupport = false,
+            SymlinkSupport = false,
+            NamedAttribute = type != Nfs4FileType.AttributeDirectory,
+            FileSystemId = new Nfs4Fsid { Major = 0, Minor = 0 },
+            UniqueHandles = true,
+            LeaseTime = Nfs4Mapping.LeaseTimeSeconds,
+            ReadAttributeError = Nfs4Status.Ok,
+            FileHandle = handle.ToArray(),
+            FileId = fileId,
+            MaxFileSize = long.MaxValue,
+            MaxLink = 1,
+            MaxName = Nfs4.MaxNameLength,
+            MaxRead = Nfs4.MaxIoSize,
+            MaxWrite = Nfs4.MaxIoSize,
+            Mode = type == Nfs4FileType.AttributeDirectory ? 0x1C0u : 0x180u,
+            NumLinks = 1,
+            Owner = "0",
+            OwnerGroup = "0",
+            RawDevice = new Nfs4SpecData { Major = 0, Minor = 0 },
+            SpaceUsed = size,
+            TimeAccess = now,
+            TimeMetadata = now,
+            TimeModify = now,
+            AclSupport = Nfs4Mapping.AclSupport,
+            XattrSupport = true,
+        };
+    }
+
     private bool HasExclusiveCreateVerifier(NfsFileHandle file, byte[] verifier)
     {
         lock (_exclusiveCreateGate)
@@ -2157,6 +2442,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         Nfs4Op.Verify => new Nfs4StatusResult(Nfs4Op.Verify) { Status = status },
         Nfs4Op.NVerify => new Nfs4StatusResult(Nfs4Op.NVerify) { Status = status },
         Nfs4Op.Access => new Nfs4AccessResult { Status = status },
+        Nfs4Op.Commit => new Nfs4CommitResult { Status = status },
         Nfs4Op.SecInfo => new Nfs4SecInfoResult(Nfs4Op.SecInfo) { Status = status },
         Nfs4Op.SecInfoNoName => new Nfs4SecInfoResult(Nfs4Op.SecInfoNoName) { Status = status },
         Nfs4Op.Read => new Nfs4ReadResult { Status = status },
@@ -2164,6 +2450,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         Nfs4Op.ReadLink => new Nfs4ReadLinkResult { Status = status },
         Nfs4Op.ReadDir => new Nfs4ReadDirResult { Status = status },
         Nfs4Op.Remove => new Nfs4RemoveResult { Status = status },
+        Nfs4Op.Link => new Nfs4LinkResult { Status = status },
         Nfs4Op.Rename => new Nfs4RenameResult { Status = status },
         Nfs4Op.Create => new Nfs4CreateResult { Status = status },
         Nfs4Op.SetAttr => new Nfs4SetAttrResult { Status = status },

@@ -136,6 +136,52 @@ public sealed class Nfs4Client
         return (Nfs4StateIdResult)result.Operations[0];
     }
 
+    /// <summary>Issues OP_COMMIT against the current file handle selected by <paramref name="prefix"/>.</summary>
+    public async ValueTask<Nfs4CommitResult> CommitAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        ulong offset,
+        uint count,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "commit",
+            [.. prefix, new Nfs4CommitOp { Offset = offset, Count = count }],
+            cancellationToken).ConfigureAwait(false);
+
+        return (Nfs4CommitResult)result.Operations[^1];
+    }
+
+    /// <summary>Issues OP_LINK using the saved file handle as source and current file handle as target directory.</summary>
+    public async ValueTask<Nfs4LinkResult> LinkAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        string newName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "link",
+            [.. prefix, new Nfs4LinkOp { NewName = newName }],
+            cancellationToken).ConfigureAwait(false);
+
+        return (Nfs4LinkResult)result.Operations[^1];
+    }
+
+    /// <summary>Issues OP_OPENATTR against the current file handle selected by <paramref name="prefix"/>.</summary>
+    public async ValueTask<Nfs4Status> OpenAttrAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        bool createDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "openattr",
+            [.. prefix, new Nfs4OpenAttrOp { CreateDirectory = createDirectory }],
+            cancellationToken).ConfigureAwait(false);
+
+        return result.Status;
+    }
+
     /// <summary>Issues OP_VERIFY against the current file handle selected by <paramref name="prefix"/>.</summary>
     public async ValueTask<Nfs4Status> VerifyAsync(
         IEnumerable<Nfs4ArgOp> prefix,
