@@ -303,6 +303,75 @@ public sealed class Nfs4WireTests
     }
 
     [Fact]
+    public void SessionStateManagementOperations_RoundTrip()
+    {
+        byte[] sessionId = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        var stateId = new Nfs4StateId { Sequence = 3, Other = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] };
+        var args = new Nfs4CompoundArgs { Tag = "m31", MinorVersion = Nfs4.MinorVersion1 };
+        args.Operations.Add(new Nfs4BackchannelCtlOp { CallbackProgram = 0x40000131 });
+        args.Operations.Add(new Nfs4BindConnToSessionOp
+        {
+            SessionId = sessionId,
+            Direction = Nfs4ChannelDirectionFromClient.BackOrBoth,
+            UseConnectionInRdmaMode = true,
+        });
+        args.Operations.Add(new Nfs4FreeStateIdOp { StateId = stateId });
+        var test = new Nfs4TestStateIdOp();
+        test.StateIds.Add(stateId);
+        test.StateIds.Add(new Nfs4StateId { Sequence = 1, Other = new byte[Nfs4.OtherSize] });
+        args.Operations.Add(test);
+
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        var writer = new XdrWriter(buffer);
+        args.Encode(ref writer);
+
+        var reader = new XdrReader(buffer.WrittenSpan);
+        Nfs4CompoundArgs decoded = Nfs4CompoundArgs.Decode(ref reader);
+
+        Assert.Equal(0x40000131u, Assert.IsType<Nfs4BackchannelCtlOp>(decoded.Operations[0]).CallbackProgram);
+        var bind = Assert.IsType<Nfs4BindConnToSessionOp>(decoded.Operations[1]);
+        Assert.Equal(sessionId, bind.SessionId);
+        Assert.Equal(Nfs4ChannelDirectionFromClient.BackOrBoth, bind.Direction);
+        Assert.True(bind.UseConnectionInRdmaMode);
+        Assert.Equal(stateId.Other, Assert.IsType<Nfs4FreeStateIdOp>(decoded.Operations[2]).StateId.Other);
+        Assert.Equal(2, Assert.IsType<Nfs4TestStateIdOp>(decoded.Operations[3]).StateIds.Count);
+    }
+
+    [Fact]
+    public void SessionStateManagementResults_RoundTrip()
+    {
+        byte[] sessionId = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        var result = new Nfs4CompoundResult { Status = Nfs4Status.Ok, Tag = "m31-results" };
+        result.Operations.Add(new Nfs4StatusResult(Nfs4Op.BackchannelCtl) { Status = Nfs4Status.Ok });
+        result.Operations.Add(new Nfs4BindConnToSessionResult
+        {
+            Status = Nfs4Status.Ok,
+            SessionId = sessionId,
+            Direction = Nfs4ChannelDirectionFromServer.Both,
+            UseConnectionInRdmaMode = true,
+        });
+        result.Operations.Add(new Nfs4StatusResult(Nfs4Op.FreeStateId) { Status = Nfs4Status.Ok });
+        var test = new Nfs4TestStateIdResult { Status = Nfs4Status.Ok };
+        test.StateStatuses.Add(Nfs4Status.Ok);
+        test.StateStatuses.Add(Nfs4Status.BadStateId);
+        result.Operations.Add(test);
+
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        var writer = new XdrWriter(buffer);
+        result.Encode(ref writer);
+
+        var reader = new XdrReader(buffer.WrittenSpan);
+        Nfs4CompoundResult decoded = Nfs4CompoundResult.Decode(ref reader);
+
+        Assert.Equal(Nfs4Op.BackchannelCtl, decoded.Operations[0].Op);
+        var bind = Assert.IsType<Nfs4BindConnToSessionResult>(decoded.Operations[1]);
+        Assert.Equal(sessionId, bind.SessionId);
+        Assert.Equal(Nfs4ChannelDirectionFromServer.Both, bind.Direction);
+        Assert.Equal(Nfs4Op.FreeStateId, decoded.Operations[2].Op);
+        Assert.Equal([Nfs4Status.Ok, Nfs4Status.BadStateId], Assert.IsType<Nfs4TestStateIdResult>(decoded.Operations[3]).StateStatuses);
+    }
+
+    [Fact]
     public void PnfsMultiDataServerDeviceAndLayout_RoundTrip()
     {
         var address = new Nfs4FileLayoutDataServerAddress

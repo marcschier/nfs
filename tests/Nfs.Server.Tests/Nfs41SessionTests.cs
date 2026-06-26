@@ -906,6 +906,120 @@ public sealed class Nfs41SessionTests
         Assert.Equal(Nfs4Status.Ok, retry.Status);
     }
 
+    [Fact]
+    public async Task FreeStateId_ReleasesUnlockedLockState_AndRejectsActiveOrUnknown()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        NfsFileHandle backing = fileSystem.CreateFile(fileSystem.Root, "free-stateid.bin", new byte[16]);
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        var file = new Nfs4Handle { Data = backing.ToArray() };
+        (ulong clientId, byte[] sessionId) = await EstablishSessionAsync(nfs, "free-stateid-client", 0);
+        await CompleteReclaimAsync(nfs, sessionId, 1);
+        Nfs4StateId openStateId = await OpenAsync(nfs, sessionId, 2, clientId, "open-free", "free-stateid.bin");
+
+        Nfs4CompoundResult locked = await nfs.CompoundAsync(
+            "lock-for-free",
+            Nfs4.MinorVersion1,
+            [Sequence(sessionId, 3, 0, false), new Nfs4PutFhOp { Handle = file }, NewLock(clientId, "lock-free", openStateId, 0, 8)],
+            Token);
+        Nfs4StateId lockStateId = Assert.IsType<Nfs4LockResult>(locked.Operations[^1]).StateId;
+
+        Assert.Equal(
+            Nfs4Status.LocksHeld,
+            await nfs.FreeStateIdAsync([Sequence(sessionId, 4, 0, false)], lockStateId, Token));
+
+        Nfs4CompoundResult unlock = await nfs.CompoundAsync(
+            "unlock-for-free",
+            Nfs4.MinorVersion1,
+            [
+                Sequence(sessionId, 5, 0, false),
+                new Nfs4LockUnlockOp
+                {
+                    LockType = Nfs4LockType.Write,
+                    Seqid = 2,
+                    LockStateId = lockStateId,
+                    Offset = 0,
+                    Length = 8,
+                },
+            ],
+            Token);
+        Assert.Equal(Nfs4Status.Ok, unlock.Status);
+
+        Assert.Equal(
+            Nfs4Status.Ok,
+            await nfs.FreeStateIdAsync([Sequence(sessionId, 6, 0, false)], lockStateId, Token));
+        Assert.Equal(
+            Nfs4Status.BadStateId,
+            await nfs.FreeStateIdAsync([Sequence(sessionId, 7, 0, false)], lockStateId, Token));
+    }
+
+    [Fact]
+    public async Task TestStateId_ReturnsParallelStatuses()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.CreateFile(fileSystem.Root, "test-stateid.bin", new byte[4]);
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        (ulong clientId, byte[] sessionId) = await EstablishSessionAsync(nfs, "test-stateid-client", 0);
+        await CompleteReclaimAsync(nfs, sessionId, 1);
+        Nfs4StateId openStateId = await OpenAsync(nfs, sessionId, 2, clientId, "open-test", "test-stateid.bin");
+        var bogus = new Nfs4StateId { Sequence = 1, Other = [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9] };
+
+        Nfs4TestStateIdResult result = await nfs.TestStateIdAsync(
+            [Sequence(sessionId, 3, 0, false)],
+            [openStateId, bogus],
+            Token);
+
+        Assert.Equal(Nfs4Status.Ok, result.Status);
+        Assert.Equal([Nfs4Status.Ok, Nfs4Status.BadStateId], result.StateStatuses);
+    }
+
+    [Fact]
+    public async Task BindConnToSession_BindsKnownSessionAndRejectsUnknown()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        (_, byte[] sessionId) = await EstablishSessionAsync(nfs, "bind-session-client", 0);
+
+        Nfs4BindConnToSessionResult bind = await nfs.BindConnectionToSessionAsync(
+            sessionId,
+            Nfs4ChannelDirectionFromClient.Fore,
+            cancellationToken: Token);
+
+        Assert.Equal(Nfs4Status.Ok, bind.Status);
+        Assert.Equal(sessionId, bind.SessionId);
+        Assert.Equal(Nfs4ChannelDirectionFromServer.Fore, bind.Direction);
+
+        Nfs4BindConnToSessionResult unknown = await nfs.BindConnectionToSessionAsync(
+            new byte[Nfs4.SessionIdSize],
+            cancellationToken: Token);
+        Assert.Equal(Nfs4Status.BadSession, unknown.Status);
+    }
+
+    [Fact]
+    public async Task BackchannelCtl_UpdatesKnownSessionAndRejectsUnknown()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        (_, byte[] sessionId) = await EstablishSessionAsync(nfs, "backchannel-ctl-client", 0);
+
+        Nfs4Status updated = await nfs.BackchannelCtlAsync(
+            [Sequence(sessionId, 1, 0, false)],
+            0x40000131,
+            cancellationToken: Token);
+        Assert.Equal(Nfs4Status.Ok, updated);
+
+        Nfs4CompoundResult unknown = await nfs.CompoundAsync(
+            "backchannel-ctl-unknown",
+            Nfs4.MinorVersion1,
+            [new Nfs4BackchannelCtlOp { CallbackProgram = 0x40000131 }],
+            Token);
+        Assert.Equal(Nfs4Status.BadSession, unknown.Status);
+    }
+
     private static Nfs4SequenceOp Sequence(byte[] sessionId, uint sequenceId, uint slot, bool cacheThis) => new()
     {
         SessionId = sessionId,

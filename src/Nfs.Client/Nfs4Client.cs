@@ -182,6 +182,84 @@ public sealed class Nfs4Client
         return result.Status;
     }
 
+    /// <summary>Issues OP_FREE_STATEID for a lock state identifier.</summary>
+    public async ValueTask<Nfs4Status> FreeStateIdAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        Nfs4StateId stateId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "free-stateid",
+            Nfs4.MinorVersion1,
+            [.. prefix, new Nfs4FreeStateIdOp { StateId = stateId }],
+            cancellationToken).ConfigureAwait(false);
+
+        return result.Status;
+    }
+
+    /// <summary>Issues OP_TEST_STATEID for one or more state identifiers.</summary>
+    public async ValueTask<Nfs4TestStateIdResult> TestStateIdAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        IEnumerable<Nfs4StateId> stateIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        ArgumentNullException.ThrowIfNull(stateIds);
+        var op = new Nfs4TestStateIdOp();
+        op.StateIds.AddRange(stateIds);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "test-stateid",
+            Nfs4.MinorVersion1,
+            [.. prefix, op],
+            cancellationToken).ConfigureAwait(false);
+
+        return (Nfs4TestStateIdResult)result.Operations[^1];
+    }
+
+    /// <summary>Issues OP_BIND_CONN_TO_SESSION for the current RPC connection.</summary>
+    public async ValueTask<Nfs4BindConnToSessionResult> BindConnectionToSessionAsync(
+        byte[] sessionId,
+        Nfs4ChannelDirectionFromClient direction = Nfs4ChannelDirectionFromClient.Fore,
+        bool useConnectionInRdmaMode = false,
+        CancellationToken cancellationToken = default)
+    {
+        Nfs4CompoundResult result = await CompoundAsync(
+            "bind-conn-to-session",
+            Nfs4.MinorVersion1,
+            [
+                new Nfs4BindConnToSessionOp
+                {
+                    SessionId = sessionId,
+                    Direction = direction,
+                    UseConnectionInRdmaMode = useConnectionInRdmaMode,
+                },
+            ],
+            cancellationToken).ConfigureAwait(false);
+
+        return (Nfs4BindConnToSessionResult)result.Operations[0];
+    }
+
+    /// <summary>Issues OP_BACKCHANNEL_CTL for a sequenced session.</summary>
+    public async ValueTask<Nfs4Status> BackchannelCtlAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        uint callbackProgram,
+        IEnumerable<int>? callbackSecurityFlavors = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        var op = new Nfs4BackchannelCtlOp { CallbackProgram = callbackProgram };
+        op.CallbackSecurityFlavors.Clear();
+        op.CallbackSecurityFlavors.AddRange(callbackSecurityFlavors ?? [0]);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "backchannel-ctl",
+            Nfs4.MinorVersion1,
+            [.. prefix, op],
+            cancellationToken).ConfigureAwait(false);
+
+        return result.Status;
+    }
+
     /// <summary>Issues OP_VERIFY against the current file handle selected by <paramref name="prefix"/>.</summary>
     public async ValueTask<Nfs4Status> VerifyAsync(
         IEnumerable<Nfs4ArgOp> prefix,

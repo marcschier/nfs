@@ -66,6 +66,46 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         _pnfsOptions = pnfsOptions ?? new Nfs4PnfsOptions(["127.0.0.1.0.0"], Nfs4Pnfs.DefaultStripeUnit);
     }
 
+    private Nfs4StatusResult BackchannelCtl(Nfs4BackchannelCtlOp op, CompoundContext context) =>
+        new(Nfs4Op.BackchannelCtl)
+        {
+            Status = _sessions.UpdateBackChannel(context.SessionId, op.CallbackProgram, op.CallbackSecurityFlavors)
+                ? Nfs4Status.Ok
+                : Nfs4Status.BadSession,
+        };
+
+    private Nfs4BindConnToSessionResult BindConnToSession(Nfs4BindConnToSessionOp op, CompoundContext context)
+    {
+        (Nfs4Status status, Nfs4ChannelDirectionFromServer direction, bool useRdma) = _sessions.BindConnection(
+            op.SessionId,
+            op.Direction,
+            op.UseConnectionInRdmaMode,
+            context.Connection);
+        return new Nfs4BindConnToSessionResult
+        {
+            Status = status,
+            SessionId = op.SessionId,
+            Direction = direction,
+            UseConnectionInRdmaMode = useRdma,
+        };
+    }
+
+    private Nfs4StatusResult FreeStateId(Nfs4FreeStateIdOp op) => new(Nfs4Op.FreeStateId)
+    {
+        Status = _state.FreeStateId(op.StateId),
+    };
+
+    private Nfs4TestStateIdResult TestStateId(Nfs4TestStateIdOp op)
+    {
+        var result = new Nfs4TestStateIdResult { Status = Nfs4Status.Ok };
+        foreach (Nfs4StateId stateId in op.StateIds)
+        {
+            result.StateStatuses.Add(_state.CheckStateId(stateId));
+        }
+
+        return result;
+    }
+
     /// <inheritdoc/>
     public uint Program => Nfs4.Program;
 
@@ -160,6 +200,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         Nfs4Status overall = Nfs4Status.Ok;
         var context = CreateContext(request);
         context.SessionClientId = _sessions.GetClientId(sequence.SessionId);
+        context.SessionId = sequence.SessionId;
         foreach (Nfs4ArgOp operation in args.Operations.Skip(1))
         {
             Nfs4ResOp resop = await ExecuteAsync(operation, context, cancellationToken).ConfigureAwait(false);
@@ -223,9 +264,13 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
                 Nfs4LockOp lockOp => await LockAsync(context, lockOp, cancellationToken).ConfigureAwait(false),
                 Nfs4LockTestOp lockTest => LockTest(context, lockTest),
                 Nfs4LockUnlockOp lockUnlock => await LockUnlockAsync(lockUnlock, cancellationToken).ConfigureAwait(false),
+                Nfs4BackchannelCtlOp backchannelCtl => BackchannelCtl(backchannelCtl, context),
+                Nfs4BindConnToSessionOp bindConnToSession => BindConnToSession(bindConnToSession, context),
                 Nfs4ExchangeIdOp exchangeId => ExchangeId(exchangeId),
                 Nfs4CreateSessionOp createSession => CreateSession(createSession, context),
                 Nfs4DestroySessionOp destroySession => DestroySession(destroySession),
+                Nfs4FreeStateIdOp freeStateId => FreeStateId(freeStateId),
+                Nfs4TestStateIdOp testStateId => TestStateId(testStateId),
                 Nfs4DestroyClientIdOp destroyClientId => DestroyClientId(destroyClientId),
                 Nfs4ReclaimCompleteOp => ReclaimComplete(),
                 Nfs4GetDeviceInfoOp getDeviceInfo => GetDeviceInfo(getDeviceInfo),
@@ -2462,9 +2507,11 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         Nfs4Op.Lock => new Nfs4LockResult { Status = status },
         Nfs4Op.LockTest => new Nfs4LockTestResult { Status = status },
         Nfs4Op.LockUnlock => new Nfs4LockUnlockResult { Status = status },
+        Nfs4Op.BindConnToSession => new Nfs4BindConnToSessionResult { Status = status },
         Nfs4Op.ExchangeId => new Nfs4ExchangeIdResult { Status = status },
         Nfs4Op.CreateSession => new Nfs4CreateSessionResult { Status = status },
         Nfs4Op.Sequence => new Nfs4SequenceResult { Status = status },
+        Nfs4Op.TestStateId => new Nfs4TestStateIdResult { Status = status },
         Nfs4Op.GetDeviceInfo => new Nfs4GetDeviceInfoResult { Status = status },
         Nfs4Op.LayoutGet => new Nfs4LayoutGetResult { Status = status },
         Nfs4Op.LayoutCommit => new Nfs4LayoutCommitResult { Status = status },
@@ -2532,6 +2579,8 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         public bool AdvertiseRpcSecGss { get; init; }
 
         public RpcDuplexConnection? Connection { get; init; }
+
+        public byte[]? SessionId { get; set; }
 
         public ulong? SessionClientId { get; set; }
     }

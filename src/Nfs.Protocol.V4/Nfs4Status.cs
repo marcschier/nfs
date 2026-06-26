@@ -86,6 +86,9 @@ public enum Nfs4Status
     /// <summary>The compared attributes were the same (NFS4ERR_SAME).</summary>
     Same = 10009,
 
+    /// <summary>The state identifier has expired (NFS4ERR_EXPIRED).</summary>
+    Expired = 10011,
+
     /// <summary>A byte-range lock conflicts with an existing lock (NFS4ERR_DENIED).</summary>
     LockDenied = 10010,
 
@@ -112,6 +115,9 @@ public enum Nfs4Status
 
     /// <summary>The sequence value is out of order for the slot (NFS4ERR_SEQ_MISORDERED).</summary>
     SequenceMisordered = 10063,
+
+    /// <summary>The delegation state identifier was revoked (NFS4ERR_DELEG_REVOKED).</summary>
+    DelegationRevoked = 10087,
 
     /// <summary>No current file handle is set (NFS4ERR_NOFILEHANDLE).</summary>
     NoFileHandle = 10020,

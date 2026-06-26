@@ -71,6 +71,70 @@ public record struct Nfs4ChannelAttributes : IXdrSerializable<Nfs4ChannelAttribu
     }
 }
 
+/// <summary>Channel directions requested by BIND_CONN_TO_SESSION (<c>channel_dir_from_client4</c>).</summary>
+public enum Nfs4ChannelDirectionFromClient
+{
+    /// <summary>Bind the connection for fore-channel traffic.</summary>
+    Fore = 1,
+
+    /// <summary>Bind the connection for back-channel traffic.</summary>
+    Back = 2,
+
+    /// <summary>Bind for fore-channel traffic, or both if the server chooses.</summary>
+    ForeOrBoth = 3,
+
+    /// <summary>Bind for back-channel traffic, or both if the server chooses.</summary>
+    BackOrBoth = 4,
+}
+
+/// <summary>BACKCHANNEL_CTL: update callback program and security parameters for the current session.</summary>
+public sealed class Nfs4BackchannelCtlOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the callback RPC program number.</summary>
+    public uint CallbackProgram { get; set; }
+
+    /// <summary>Gets the callback security flavors.</summary>
+    public List<int> CallbackSecurityFlavors { get; } = [0];
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.BackchannelCtl;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteUInt32(CallbackProgram);
+        writer.WriteUInt32((uint)CallbackSecurityFlavors.Count);
+        foreach (int flavor in CallbackSecurityFlavors)
+        {
+            writer.WriteInt32(flavor);
+        }
+    }
+}
+
+/// <summary>BIND_CONN_TO_SESSION: bind this transport connection to a session.</summary>
+public sealed class Nfs4BindConnToSessionOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the session identifier (16 bytes).</summary>
+    public byte[] SessionId { get; set; } = new byte[Nfs4.SessionIdSize];
+
+    /// <summary>Gets or sets the channel direction requested by the client.</summary>
+    public Nfs4ChannelDirectionFromClient Direction { get; set; } = Nfs4ChannelDirectionFromClient.Fore;
+
+    /// <summary>Gets or sets whether this connection should be used in RDMA mode.</summary>
+    public bool UseConnectionInRdmaMode { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.BindConnToSession;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteOpaqueFixed(SessionId);
+        writer.WriteUInt32((uint)Direction);
+        writer.WriteBool(UseConnectionInRdmaMode);
+    }
+}
+
 /// <summary>EXCHANGE_ID: establish or update a client identifier (version 4.1).</summary>
 public sealed class Nfs4ExchangeIdOp : Nfs4ArgOp
 {
@@ -187,6 +251,39 @@ public sealed class Nfs4DestroySessionOp : Nfs4ArgOp
 
     /// <inheritdoc/>
     public override void Encode(ref XdrWriter writer) => writer.WriteOpaqueFixed(SessionId);
+}
+
+/// <summary>FREE_STATEID: release a lock state identifier with no active locks.</summary>
+public sealed class Nfs4FreeStateIdOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the state identifier to release.</summary>
+    public Nfs4StateId StateId { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.FreeStateId;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer) => StateId.WriteTo(ref writer);
+}
+
+/// <summary>TEST_STATEID: check one or more state identifiers.</summary>
+public sealed class Nfs4TestStateIdOp : Nfs4ArgOp
+{
+    /// <summary>Gets the state identifiers to test.</summary>
+    public List<Nfs4StateId> StateIds { get; } = [];
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.TestStateId;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteUInt32((uint)StateIds.Count);
+        foreach (Nfs4StateId stateId in StateIds)
+        {
+            stateId.WriteTo(ref writer);
+        }
+    }
 }
 
 /// <summary>DESTROY_CLIENTID: destroy a client identifier (version 4.1).</summary>

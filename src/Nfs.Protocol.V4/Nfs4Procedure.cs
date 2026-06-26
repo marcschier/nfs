@@ -161,6 +161,12 @@ public enum Nfs4Op
     /// <summary>Release a lock owner's state (OP_RELEASE_LOCKOWNER).</summary>
     ReleaseLockOwner = 39,
 
+    /// <summary>Set session back-channel callback parameters, version 4.1 (OP_BACKCHANNEL_CTL).</summary>
+    BackchannelCtl = 40,
+
+    /// <summary>Bind a transport connection to a session, version 4.1 (OP_BIND_CONN_TO_SESSION).</summary>
+    BindConnToSession = 41,
+
     /// <summary>Establish or update a client identifier, version 4.1 (OP_EXCHANGE_ID).</summary>
     ExchangeId = 42,
 
@@ -169,6 +175,12 @@ public enum Nfs4Op
 
     /// <summary>Destroy a session, version 4.1 (OP_DESTROY_SESSION).</summary>
     DestroySession = 44,
+
+    /// <summary>Release a lock state identifier, version 4.1 (OP_FREE_STATEID).</summary>
+    FreeStateId = 45,
+
+    /// <summary>Check one or more state identifiers, version 4.1 (OP_TEST_STATEID).</summary>
+    TestStateId = 46,
 
     /// <summary>Get a pNFS device address, version 4.1 (OP_GETDEVICEINFO).</summary>
     GetDeviceInfo = 47,
