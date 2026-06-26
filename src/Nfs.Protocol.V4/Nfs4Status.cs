@@ -113,6 +113,9 @@ public enum Nfs4Status
     /// <summary>The slot identifier is out of range (NFS4ERR_BADSLOT).</summary>
     BadSlot = 10053,
 
+    /// <summary>No pNFS layout is currently available (NFS4ERR_LAYOUTUNAVAILABLE).</summary>
+    LayoutUnavailable = 10059,
+
     /// <summary>The sequence value is out of order for the slot (NFS4ERR_SEQ_MISORDERED).</summary>
     SequenceMisordered = 10063,
 
