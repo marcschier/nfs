@@ -37,7 +37,13 @@ public static class Nfs4Pnfs
     /// <summary>The pNFS files-layout utility bit saying dense striping is used.</summary>
     public const uint FileLayoutUtilDense = 1;
 
-    /// <summary>The default single data-server device id used by the loopback files layout.</summary>
+    /// <summary>The files-layout utility bits reserved for flags; the remaining bits carry the stripe unit.</summary>
+    public const uint FileLayoutUtilFlagMask = 0x3Fu;
+
+    /// <summary>The default files-layout stripe unit, in bytes.</summary>
+    public const uint DefaultStripeUnit = 65536;
+
+    /// <summary>The default data-server device id used by the loopback files layout.</summary>
     public static byte[] DefaultDeviceId { get; } =
         [0x4e, 0x46, 0x53, 0x70, 0x4e, 0x46, 0x53, 0x44, 0, 0, 0, 0, 0, 0, 0, 1];
 }
@@ -260,6 +266,13 @@ public sealed class Nfs4FileLayout
 
     /// <summary>Gets or sets the files-layout utility flags.</summary>
     public uint Util { get; set; } = Nfs4Pnfs.FileLayoutUtilDense;
+
+    /// <summary>Gets or sets the files-layout stripe unit carried in <see cref="Util"/>.</summary>
+    public uint StripeUnit
+    {
+        get => Util & ~Nfs4Pnfs.FileLayoutUtilFlagMask;
+        set => Util = (Util & Nfs4Pnfs.FileLayoutUtilFlagMask) | (value & ~Nfs4Pnfs.FileLayoutUtilFlagMask);
+    }
 
     /// <summary>Gets or sets the first stripe index.</summary>
     public uint FirstStripeIndex { get; set; }

@@ -526,6 +526,141 @@ public sealed class Nfs41SessionTests
     }
 
     [Fact]
+    public async Task PnfsFilesLayout_MultiDataServerDevice_StripesIoAcrossDataServers()
+    {
+        const uint stripeUnit = 4096;
+        var fileSystem = new InMemoryFileSystem();
+        NfsFileHandle backing = fileSystem.CreateFile(fileSystem.Root, "striped.bin", []);
+        var dsPrograms = new[]
+        {
+            new CountingNfs4Program(fileSystem),
+            new CountingNfs4Program(fileSystem),
+        };
+        await using var ds0 = new RpcServer(new IPEndPoint(IPAddress.Loopback, 0), dsPrograms[0]);
+        await using var ds1 = new RpcServer(new IPEndPoint(IPAddress.Loopback, 0), dsPrograms[1]);
+        ds0.Start();
+        ds1.Start();
+
+        var pnfsOptions = new Nfs4PnfsOptions(
+            [UniversalAddress(ds0.LocalEndPoint), UniversalAddress(ds1.LocalEndPoint)],
+            stripeUnit);
+        await using var mds = new RpcServer(new IPEndPoint(IPAddress.Loopback, 0), new Nfs4Program(fileSystem, pnfsOptions: pnfsOptions));
+        mds.Start();
+
+        Nfs4Client mdsClient = await ConnectAsync(mds);
+        (_, byte[] sessionId) = await EstablishSessionAsync(mdsClient, "pnfs-striped", 0);
+        var file = new Nfs4Handle { Data = backing.ToArray() };
+
+        Nfs4CompoundResult deviceInfo = await mdsClient.CompoundAsync(
+            "pnfs-striped-device",
+            Nfs4.MinorVersion1,
+            [Sequence(sessionId, 1, 0, false), new Nfs4GetDeviceInfoOp()],
+            Token);
+        Assert.Equal(Nfs4Status.Ok, deviceInfo.Status);
+        var device = Assert.IsType<Nfs4GetDeviceInfoResult>(deviceInfo.Operations[^1]);
+        Nfs4FileLayoutDataServerAddress address = Nfs4FileLayoutDataServerAddress.Decode(device.DeviceAddress.Body);
+        Assert.Equal([0u, 1], address.StripeIndices);
+        Assert.Equal(2, address.MultipathDataServers.Length);
+        Assert.Equal(UniversalAddress(ds0.LocalEndPoint), address.MultipathDataServers[0][0].Uaddr);
+        Assert.Equal(UniversalAddress(ds1.LocalEndPoint), address.MultipathDataServers[1][0].Uaddr);
+
+        Nfs4CompoundResult layoutGet = await mdsClient.CompoundAsync(
+            "pnfs-striped-layout",
+            Nfs4.MinorVersion1,
+            [
+                Sequence(sessionId, 2, 0, false),
+                new Nfs4PutFhOp { Handle = file },
+                new Nfs4LayoutGetOp { Iomode = Nfs4LayoutIomode.ReadWrite },
+            ],
+            Token);
+        Assert.Equal(Nfs4Status.Ok, layoutGet.Status);
+        var layoutResult = Assert.IsType<Nfs4LayoutGetResult>(layoutGet.Operations[^1]);
+        Nfs4FileLayout filesLayout = Nfs4FileLayout.Decode(Assert.Single(layoutResult.Layouts).Content.Body);
+        Assert.Equal(stripeUnit, filesLayout.StripeUnit);
+        Assert.Equal(Nfs4Pnfs.FileLayoutUtilDense, filesLayout.Util & Nfs4Pnfs.FileLayoutUtilFlagMask);
+        Assert.Equal(2, filesLayout.FileHandles.Length);
+
+        await using RpcClient dsRpc0 = await RpcClient.ConnectAsync(ds0.LocalEndPoint, Token);
+        await using RpcClient dsRpc1 = await RpcClient.ConnectAsync(ds1.LocalEndPoint, Token);
+        var dsClients = new[] { new Nfs4Client(dsRpc0), new Nfs4Client(dsRpc1) };
+        byte[] payload = Enumerable.Range(0, checked((int)(stripeUnit * 2 + (stripeUnit / 2))))
+            .Select(static i => (byte)(i % 251))
+            .ToArray();
+
+        for (int offset = 0; offset < payload.Length;)
+        {
+            int count = Math.Min(StripeRemaining(offset, stripeUnit), payload.Length - offset);
+            uint dataServerIndex = DataServerIndex(filesLayout, address, (ulong)offset);
+            int dataServer = checked((int)dataServerIndex);
+            Nfs4CompoundResult write = await dsClients[dataServer].CompoundAsync(
+                "pnfs-striped-ds-write",
+                [
+                    new Nfs4PutFhOp { Handle = filesLayout.FileHandles[dataServer] },
+                    new Nfs4WriteOp
+                    {
+                        Offset = (ulong)offset,
+                        Data = payload.AsSpan(offset, count).ToArray(),
+                        Stable = 2,
+                    },
+                ],
+                Token);
+            Assert.Equal(Nfs4Status.Ok, write.Status);
+            Assert.Equal((uint)count, Assert.IsType<Nfs4WriteResult>(write.Operations[^1]).Count);
+            offset += count;
+        }
+
+        byte[] actual = new byte[payload.Length];
+        for (int offset = 0; offset < actual.Length;)
+        {
+            int count = Math.Min(StripeRemaining(offset, stripeUnit), actual.Length - offset);
+            uint dataServerIndex = DataServerIndex(filesLayout, address, (ulong)offset);
+            int dataServer = checked((int)dataServerIndex);
+            Nfs4CompoundResult read = await dsClients[dataServer].CompoundAsync(
+                "pnfs-striped-ds-read",
+                [
+                    new Nfs4PutFhOp { Handle = filesLayout.FileHandles[dataServer] },
+                    new Nfs4ReadOp { Offset = (ulong)offset, Count = (uint)count },
+                ],
+                Token);
+            Assert.Equal(Nfs4Status.Ok, read.Status);
+            byte[] data = Assert.IsType<Nfs4ReadResult>(read.Operations[^1]).Data;
+            Array.Copy(data, 0, actual, offset, data.Length);
+            offset += count;
+        }
+
+        Assert.Equal(payload, actual);
+        Assert.All(dsPrograms, static program => Assert.True(program.WriteCount > 0));
+        Assert.All(dsPrograms, static program => Assert.True(program.ReadCount > 0));
+
+        Nfs4CompoundResult commit = await mdsClient.CompoundAsync(
+            "pnfs-striped-commit",
+            Nfs4.MinorVersion1,
+            [
+                Sequence(sessionId, 3, 0, false),
+                new Nfs4PutFhOp { Handle = file },
+                new Nfs4LayoutCommitOp
+                {
+                    StateId = layoutResult.StateId,
+                    Length = (ulong)payload.Length,
+                    NewOffset = (ulong)payload.Length,
+                },
+            ],
+            Token);
+        Assert.Equal((ulong)payload.Length, Assert.IsType<Nfs4LayoutCommitResult>(commit.Operations[^1]).NewSize);
+
+        Nfs4CompoundResult layoutReturn = await mdsClient.CompoundAsync(
+            "pnfs-striped-return",
+            Nfs4.MinorVersion1,
+            [
+                Sequence(sessionId, 4, 0, false),
+                new Nfs4PutFhOp { Handle = file },
+                new Nfs4LayoutReturnOp { StateId = layoutResult.StateId },
+            ],
+            Token);
+        Assert.Equal(Nfs4Status.Ok, layoutReturn.Status);
+    }
+
+    [Fact]
     public async Task BackChannelRecall_UsesCbSequenceThenDelegReturnAllowsRetry()
     {
         const uint callbackProgram = 0x40000123;
@@ -873,6 +1008,28 @@ public sealed class Nfs41SessionTests
         Assert.Equal(Nfs4Status.Ok, result.Status);
     }
 
+    private static string UniversalAddress(IPEndPoint endPoint)
+    {
+        int port = endPoint.Port;
+        return $"127.0.0.1.{port >> 8}.{port & 0xFF}";
+    }
+
+    private static int StripeRemaining(int offset, uint stripeUnit)
+    {
+        int unit = checked((int)stripeUnit);
+        return unit - (offset % unit);
+    }
+
+    private static uint DataServerIndex(
+        Nfs4FileLayout layout,
+        Nfs4FileLayoutDataServerAddress address,
+        ulong offset)
+    {
+        ulong stripe = offset / layout.StripeUnit;
+        uint stripeSlot = (uint)((layout.FirstStripeIndex + stripe) % (ulong)address.StripeIndices.Length);
+        return address.StripeIndices[stripeSlot];
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     private static RpcServer StartServer(INfsFileSystem fileSystem)
@@ -895,6 +1052,62 @@ public sealed class Nfs41SessionTests
     {
         RpcClient rpc = await RpcClient.ConnectAsync(server.LocalEndPoint, Token);
         return new Nfs4Client(rpc);
+    }
+
+    private sealed class CountingNfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPointAware
+    {
+        private readonly Nfs4Program _inner;
+
+        public CountingNfs4Program(INfsFileSystem fileSystem)
+        {
+            _inner = new Nfs4Program(fileSystem);
+        }
+
+        public uint Program => _inner.Program;
+
+        public int ReadCount { get; private set; }
+
+        public int WriteCount { get; private set; }
+
+        public ValueTask<RpcReplyPayload> InvokeAsync(
+            RpcCallInfo request,
+            ReadOnlyMemory<byte> arguments,
+            CancellationToken cancellationToken)
+        {
+            CountIo(request, arguments);
+            return _inner.InvokeAsync(request, arguments, cancellationToken);
+        }
+
+        public void SetRpcSecGssEnabled(bool enabled) => _inner.SetRpcSecGssEnabled(enabled);
+
+        public void SetRpcLocalEndPoint(IPEndPoint endPoint) => _inner.SetRpcLocalEndPoint(endPoint);
+
+        private void CountIo(RpcCallInfo request, ReadOnlyMemory<byte> arguments)
+        {
+            if (request.Version != Nfs4.ProtocolVersion || request.Procedure != (uint)Nfs4Procedure.Compound)
+            {
+                return;
+            }
+
+            Nfs4CompoundArgs compound = DecodeCompound(arguments);
+            foreach (Nfs4ArgOp operation in compound.Operations)
+            {
+                if (operation is Nfs4ReadOp)
+                {
+                    ReadCount++;
+                }
+                else if (operation is Nfs4WriteOp)
+                {
+                    WriteCount++;
+                }
+            }
+        }
+
+        private static Nfs4CompoundArgs DecodeCompound(ReadOnlyMemory<byte> arguments)
+        {
+            var reader = new XdrReader(arguments.Span);
+            return Nfs4CompoundArgs.Decode(ref reader);
+        }
     }
 
     private sealed class TcpBackChannelTransport(IPEndPoint endPoint) : INfs41BackChannelTransport

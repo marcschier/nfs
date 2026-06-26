@@ -189,6 +189,51 @@ public sealed class Nfs4WireTests
     }
 
     [Fact]
+    public void PnfsMultiDataServerDeviceAndLayout_RoundTrip()
+    {
+        var address = new Nfs4FileLayoutDataServerAddress
+        {
+            StripeIndices = [0, 1, 2, 0, 1, 2],
+            MultipathDataServers =
+            [
+                [new Nfs4NetAddress { NetId = "tcp", Uaddr = "127.0.0.1.8.1" }],
+                [new Nfs4NetAddress { NetId = "tcp", Uaddr = "127.0.0.1.8.2" }],
+                [new Nfs4NetAddress { NetId = "tcp", Uaddr = "127.0.0.1.8.3" }],
+            ],
+        };
+
+        Nfs4FileLayoutDataServerAddress decodedAddress = Nfs4FileLayoutDataServerAddress.Decode(address.Encode());
+
+        Assert.Equal([0u, 1, 2, 0, 1, 2], decodedAddress.StripeIndices);
+        Assert.Equal(3, decodedAddress.MultipathDataServers.Length);
+        Assert.Equal("127.0.0.1.8.2", decodedAddress.MultipathDataServers[1][0].Uaddr);
+
+        var layout = new Nfs4FileLayout
+        {
+            DeviceId = Nfs4Pnfs.DefaultDeviceId.ToArray(),
+            Util = Nfs4Pnfs.FileLayoutUtilDense,
+            StripeUnit = 65536,
+            FirstStripeIndex = 1,
+            PatternOffset = 4096,
+            FileHandles =
+            [
+                new Nfs4Handle { Data = [1, 1] },
+                new Nfs4Handle { Data = [2, 2] },
+                new Nfs4Handle { Data = [3, 3] },
+            ],
+        };
+
+        Nfs4FileLayout decodedLayout = Nfs4FileLayout.Decode(layout.Encode());
+
+        Assert.Equal(Nfs4Pnfs.DefaultDeviceId, decodedLayout.DeviceId);
+        Assert.Equal(65536u, decodedLayout.StripeUnit);
+        Assert.Equal(Nfs4Pnfs.FileLayoutUtilDense, decodedLayout.Util & Nfs4Pnfs.FileLayoutUtilFlagMask);
+        Assert.Equal(1u, decodedLayout.FirstStripeIndex);
+        Assert.Equal(4096ul, decodedLayout.PatternOffset);
+        Assert.Equal([3, 3], decodedLayout.FileHandles[2].Data);
+    }
+
+    [Fact]
     public void CopyOffloadResultsAndCallback_RoundTrip()
     {
         var stateId = new Nfs4StateId { Sequence = 1, Other = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] };

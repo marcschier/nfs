@@ -29,6 +29,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
     private readonly Nfs41SessionStore _sessions;
     private readonly INfs41BackChannelTransport? _backChannelTransport;
     private readonly TimeProvider _timeProvider;
+    private readonly Nfs4PnfsOptions _pnfsOptions;
     private readonly object _offloadGate = new();
     private readonly Dictionary<string, OffloadRecord> _offloads = new(StringComparer.Ordinal);
     private IPEndPoint? _copySourceEndPoint;
@@ -42,13 +43,15 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
     /// <param name="rpcSecGssEnabled">Whether SECINFO should advertise RPCSEC_GSS flavors.</param>
     /// <param name="stableStorage">The stable storage used for NFSv4 client recovery records.</param>
     /// <param name="backChannelTransport">The optional NFSv4.1 session back-channel transport.</param>
+    /// <param name="pnfsOptions">The optional pNFS files-layout device configuration.</param>
     public Nfs4Program(
         INfsFileSystem fileSystem,
         TimeProvider? timeProvider = null,
         TimeSpan? delegationRecallTimeout = null,
         bool rpcSecGssEnabled = false,
         IStableStorage? stableStorage = null,
-        INfs41BackChannelTransport? backChannelTransport = null)
+        INfs41BackChannelTransport? backChannelTransport = null,
+        Nfs4PnfsOptions? pnfsOptions = null)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
         _fileSystem = fileSystem;
@@ -57,6 +60,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         _timeProvider = timeProvider ?? TimeProvider.System;
         _rpcSecGssEnabled = rpcSecGssEnabled;
         _backChannelTransport = backChannelTransport;
+        _pnfsOptions = pnfsOptions ?? new Nfs4PnfsOptions(["127.0.0.1.0.0"], Nfs4Pnfs.DefaultStripeUnit);
     }
 
     /// <inheritdoc/>
@@ -216,7 +220,10 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
                 Nfs4ReclaimCompleteOp => ReclaimComplete(),
                 Nfs4GetDeviceInfoOp getDeviceInfo => GetDeviceInfo(getDeviceInfo),
                 Nfs4LayoutGetOp layoutGet => LayoutGet(context, layoutGet),
-                Nfs4LayoutCommitOp layoutCommit => LayoutCommit(layoutCommit),
+                Nfs4LayoutCommitOp layoutCommit => await LayoutCommitAsync(
+                    context,
+                    layoutCommit,
+                    cancellationToken).ConfigureAwait(false),
                 Nfs4LayoutReturnOp layoutReturn => LayoutReturn(layoutReturn),
                 Nfs4CopyOp copy => await CopyAsync(context, copy, cancellationToken).ConfigureAwait(false),
                 Nfs4CopyNotifyOp copyNotify => CopyNotify(context, copyNotify),
@@ -1795,7 +1802,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
 
     private static string OffloadKey(Nfs4StateId stateId) => Convert.ToHexString(stateId.Other ?? []);
 
-    private static Nfs4GetDeviceInfoResult GetDeviceInfo(Nfs4GetDeviceInfoOp op)
+    private Nfs4GetDeviceInfoResult GetDeviceInfo(Nfs4GetDeviceInfoOp op)
     {
         if (op.LayoutType != Nfs4LayoutType.Files ||
             !op.DeviceId.AsSpan().SequenceEqual(Nfs4Pnfs.DefaultDeviceId))
@@ -1805,11 +1812,8 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
 
         var dsAddress = new Nfs4FileLayoutDataServerAddress
         {
-            StripeIndices = [0],
-            MultipathDataServers =
-            [
-                [new Nfs4NetAddress { NetId = "tcp", Uaddr = "127.0.0.1.0.0" }],
-            ],
+            StripeIndices = CreateStripeIndices(),
+            MultipathDataServers = CreateMultipathDataServers(),
         };
 
         return new Nfs4GetDeviceInfoResult
@@ -1823,7 +1827,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         };
     }
 
-    private static Nfs4LayoutGetResult LayoutGet(CompoundContext context, Nfs4LayoutGetOp op)
+    private Nfs4LayoutGetResult LayoutGet(CompoundContext context, Nfs4LayoutGetOp op)
     {
         if (context.Current is not { } file)
         {
@@ -1840,9 +1844,10 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         {
             DeviceId = Nfs4Pnfs.DefaultDeviceId.ToArray(),
             Util = Nfs4Pnfs.FileLayoutUtilDense,
+            StripeUnit = _pnfsOptions.StripeUnit,
             FirstStripeIndex = 0,
             PatternOffset = 0,
-            FileHandles = [handle],
+            FileHandles = CreateLayoutFileHandles(handle),
         };
 
         return new Nfs4LayoutGetResult
@@ -1867,14 +1872,76 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         };
     }
 
-    private static Nfs4LayoutCommitResult LayoutCommit(Nfs4LayoutCommitOp op) => op.LayoutType == Nfs4LayoutType.Files
-        ? new Nfs4LayoutCommitResult { Status = Nfs4Status.Ok }
-        : new Nfs4LayoutCommitResult { Status = Nfs4Status.NotSupported };
+    private async ValueTask<Nfs4ResOp> LayoutCommitAsync(
+        CompoundContext context,
+        Nfs4LayoutCommitOp op,
+        CancellationToken cancellationToken)
+    {
+        if (op.LayoutType != Nfs4LayoutType.Files)
+        {
+            return new Nfs4LayoutCommitResult { Status = Nfs4Status.NotSupported };
+        }
+
+        if (context.Current is null)
+        {
+            return new Nfs4LayoutCommitResult { Status = Nfs4Status.NoFileHandle };
+        }
+
+        if (op.NewOffset is not { } newOffset)
+        {
+            return new Nfs4LayoutCommitResult { Status = Nfs4Status.Ok };
+        }
+
+        NfsFileAttributes attributes = await _fileSystem
+            .SetAttributesAsync(context.Current.Value, new NfsSetAttributes { Size = newOffset }, cancellationToken)
+            .ConfigureAwait(false);
+        return new Nfs4LayoutCommitResult { Status = Nfs4Status.Ok, NewSize = attributes.Size };
+    }
 
     private static Nfs4LayoutReturnResult LayoutReturn(Nfs4LayoutReturnOp op) =>
         op.LayoutType == Nfs4LayoutType.Files && op.ReturnType == Nfs4LayoutReturnType.File
             ? new Nfs4LayoutReturnResult { Status = Nfs4Status.Ok }
             : new Nfs4LayoutReturnResult { Status = Nfs4Status.NotSupported };
+
+    private uint[] CreateStripeIndices()
+    {
+        uint[] indices = new uint[checked((int)_pnfsOptions.StripeCount)];
+        for (int i = 0; i < indices.Length; i++)
+        {
+            indices[i] = (uint)i % _pnfsOptions.DataServerCount;
+        }
+
+        return indices;
+    }
+
+    private Nfs4NetAddress[][] CreateMultipathDataServers()
+    {
+        var dataServers = new Nfs4NetAddress[_pnfsOptions.DataServerUniversalAddresses.Count][];
+        for (int i = 0; i < dataServers.Length; i++)
+        {
+            dataServers[i] =
+            [
+                new Nfs4NetAddress
+                {
+                    NetId = "tcp",
+                    Uaddr = _pnfsOptions.DataServerUniversalAddresses[i],
+                },
+            ];
+        }
+
+        return dataServers;
+    }
+
+    private Nfs4Handle[] CreateLayoutFileHandles(Nfs4Handle handle)
+    {
+        Nfs4Handle[] handles = new Nfs4Handle[checked((int)_pnfsOptions.DataServerCount)];
+        for (int i = 0; i < handles.Length; i++)
+        {
+            handles[i] = new Nfs4Handle { Data = handle.Data.ToArray() };
+        }
+
+        return handles;
+    }
 
     private Nfs4CreateSessionResult CreateSession(Nfs4CreateSessionOp op, CompoundContext context)
     {

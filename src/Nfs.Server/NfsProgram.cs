@@ -24,16 +24,23 @@ public sealed class NfsProgram : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPoi
     /// <param name="timeProvider">The clock used by the NFSv4 lease and grace state manager.</param>
     /// <param name="rpcSecGssEnabled">Whether NFSv4 SECINFO should advertise RPCSEC_GSS flavors.</param>
     /// <param name="stableStorage">The stable storage used for NFSv4 client recovery records.</param>
+    /// <param name="pnfsOptions">The optional pNFS files-layout device configuration.</param>
     public NfsProgram(
         INfsFileSystem fileSystem,
         TimeProvider? timeProvider = null,
         bool rpcSecGssEnabled = false,
-        IStableStorage? stableStorage = null)
+        IStableStorage? stableStorage = null,
+        Nfs4PnfsOptions? pnfsOptions = null)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
         _version2 = new Nfs2Program(fileSystem);
         _version3 = new Nfs3Program(fileSystem);
-        _version4 = new Nfs4Program(fileSystem, timeProvider, rpcSecGssEnabled: rpcSecGssEnabled, stableStorage: stableStorage);
+        _version4 = new Nfs4Program(
+            fileSystem,
+            timeProvider,
+            rpcSecGssEnabled: rpcSecGssEnabled,
+            stableStorage: stableStorage,
+            pnfsOptions: pnfsOptions);
     }
 
     /// <inheritdoc/>
