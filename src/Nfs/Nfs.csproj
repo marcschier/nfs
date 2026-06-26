@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NFS client and server library for .NET — the complete stack (ONC/RPC, XDR, NFS v2/v3/v4.0/4.1/4.2, MOUNT, NLM/NSM) bundled into a single package. Protocol-compliance first, NativeAOT-ready.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>nfs;nfsv4;onc-rpc;xdr;nativeaot;client;server</PackageTags>
+
+    <!-- This package bundles every shipping Nfs.* assembly into one self-contained package. The
+         ProjectReferences below use PrivateAssets="all" so none of them become NuGet dependencies;
+         an (empty) net10.0 dependency group is still emitted to match the bundled lib/ folder. -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludeBundledAssembliesInPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nfs.Abstractions\Nfs.Abstractions.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Xdr\Nfs.Xdr.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Rpc\Nfs.Rpc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Protocol.V2\Nfs.Protocol.V2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Protocol.V3\Nfs.Protocol.V3.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Protocol.V4\Nfs.Protocol.V4.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Mount\Nfs.Mount.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Nlm\Nfs.Nlm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Nsm\Nfs.Nsm.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Client\Nfs.Client.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Nfs.Server\Nfs.Server.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Bundle the referenced Nfs.* assemblies (and their docs/symbols) into lib/ so the single
+       package carries the whole stack with no external or inter-package dependencies.
+       DependsOnTargets="ResolveReferences" ensures ReferenceCopyLocalPaths is populated. -->
+  <Target Name="IncludeBundledAssembliesInPackage" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths)"
+                            Condition="'%(ReferenceCopyLocalPaths.ReferenceSourceTarget)' == 'ProjectReference' And ('%(ReferenceCopyLocalPaths.Extension)' == '.dll' Or '%(ReferenceCopyLocalPaths.Extension)' == '.xml' Or '%(ReferenceCopyLocalPaths.Extension)' == '.pdb')" />
+    </ItemGroup>
+  </Target>
+
+</Project>

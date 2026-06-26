@@ -1,8 +1,7 @@
 # Nfs
 
 [![CI](https://github.com/marcschier/nfs/actions/workflows/ci.yml/badge.svg)](https://github.com/marcschier/nfs/actions/workflows/ci.yml)
-[![NuGet Nfs.Client](https://img.shields.io/nuget/v/Nfs.Client?label=NuGet%20Nfs.Client)](https://www.nuget.org/packages/Nfs.Client)
-[![NuGet Nfs.Server](https://img.shields.io/nuget/v/Nfs.Server?label=NuGet%20Nfs.Server)](https://www.nuget.org/packages/Nfs.Server)
+[![NuGet Nfs](https://img.shields.io/nuget/v/Nfs?label=NuGet%20Nfs)](https://www.nuget.org/packages/Nfs)
 [![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-Nfs.*-2188ff?logo=github)](https://github.com/marcschier/nfs/packages)
 
 A modern, idiomatic .NET 10 **NFS client and server** library. It implements the ONC/RPC + XDR stack and the NFS protocols (v2, v3, and v4.0/4.1/4.2) from the ground up, with an emphasis on **protocol compliance and interoperability** with existing real-world implementations (the Linux kernel client and server, NFS-Ganesha, and the Windows NFS client). Performance is a close second, built on `Span<T>`, `BinaryPrimitives`, ref structs, and `System.IO.Pipelines`.
@@ -10,6 +9,16 @@ A modern, idiomatic .NET 10 **NFS client and server** library. It implements the
 The whole stack is **NativeAOT-compatible** — there is no runtime-reflection-based serialization. XDR codecs are produced by a Roslyn source generator.
 
 > The library is implemented from scratch. The previous (legacy) NekoDrive code has been removed; its protocol `.x` definitions are preserved under [`docs/reference/xdr`](docs/reference/xdr) as compliance references.
+
+## 📦 Installation
+
+The whole stack ships as a single package on nuget.org:
+
+```sh
+dotnet add package Nfs
+```
+
+`Nfs` bundles every component assembly (`Nfs.Client`, `Nfs.Server`, `Nfs.Rpc`, `Nfs.Xdr`, the protocol types, MOUNT, NLM/NSM) and has **no external NuGet dependencies** — NativeAOT trimming drops whatever you don't use. The individual `Nfs.*` packages are also published to this repository's [GitHub Packages](https://github.com/marcschier/nfs/packages) feed for fine-grained or internal consumption.
 
 ## 📚 Documentation
 

@@ -8,7 +8,7 @@
     <Project Path="samples/Nfs.Nfsv3Loopback/Nfs.Nfsv3Loopback.csproj" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/Nfs.Abstractions/Nfs.Abstractions.csproj" />
+    <Project Path="src/Nfs/Nfs.csproj" />
     <Project Path="src/Nfs.Client/Nfs.Client.csproj" />
     <Project Path="src/Nfs.Mount/Nfs.Mount.csproj" />
     <Project Path="src/Nfs.Nlm/Nfs.Nlm.csproj" />

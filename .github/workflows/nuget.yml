@@ -1,5 +1,7 @@
-# Promotes already-published packages from the GitHub Packages feed to nuget.org
-# using NuGet trusted publishing (OIDC, no long-lived API key).
+# Promotes the consolidated `Nfs` umbrella package from the GitHub Packages feed to nuget.org
+# using NuGet trusted publishing (OIDC, no long-lived API key). The `Nfs` package bundles every
+# Nfs.* assembly, so only this one package is published to nuget.org; the granular Nfs.* packages
+# remain on GitHub Packages for fine-grained/internal consumption.
 #
 # Prerequisites (one-time, owner action — not automatable here):
 #   1. nuget.org -> Account -> Trusted Publishing -> Add policy:
@@ -9,8 +11,8 @@
 #        Environment:      release
 #   2. GitHub repo -> Settings -> Environments -> New environment "release",
 #      add an environment secret NUGET_USER = your nuget.org profile name (NOT email).
-#   3. The package(s) must already exist on the GitHub Packages feed (the ci.yml
-#      `publish-github` job pushes them on a `v*` tag).
+#   3. The `Nfs` package must already exist on the GitHub Packages feed (the ci.yml
+#      `publish-github` job pushes it on a `v*` tag).
 name: Publish to NuGet.org
 
 on:
@@ -56,22 +58,20 @@ jobs:
             | jq -r '.resources[] | select(."@type"|test("^PackageBaseAddress")) | ."@id"')
           base="${base%/}"
           echo "PackageBaseAddress: $base"
-          # Derive the packable library ids from src/ (skip IsPackable=false projects).
-          for proj in src/*/*.csproj; do
-            grep -q '<IsPackable>false</IsPackable>' "$proj" && continue
-            id=$(basename "$proj" .csproj)
-            idl=$(echo "$id" | tr '[:upper:]' '[:lower:]')
-            versions=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$base/$idl/index.json" | jq -r '.versions[]')
-            if [ -n "${INPUT_VERSION}" ]; then
-              ver="${INPUT_VERSION}"
-            else
-              ver=$(echo "$versions" | tail -n 1)
-            fi
-            verl=$(echo "$ver" | tr '[:upper:]' '[:lower:]')
-            echo "Downloading $id $ver"
-            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-              "$base/$idl/$verl/$idl.$verl.nupkg" -o "promote/$id.$ver.nupkg"
-          done
+          # Promote only the consolidated `Nfs` umbrella package (it bundles every Nfs.* assembly,
+          # so the granular packages stay on GitHub Packages and are not published to nuget.org).
+          id="Nfs"
+          idl=$(echo "$id" | tr '[:upper:]' '[:lower:]')
+          versions=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$base/$idl/index.json" | jq -r '.versions[]')
+          if [ -n "${INPUT_VERSION}" ]; then
+            ver="${INPUT_VERSION}"
+          else
+            ver=$(echo "$versions" | tail -n 1)
+          fi
+          verl=$(echo "$ver" | tr '[:upper:]' '[:lower:]')
+          echo "Downloading $id $ver"
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            "$base/$idl/$verl/$idl.$verl.nupkg" -o "promote/$id.$ver.nupkg"
           echo "Packages to promote:"
           ls -l promote
 
