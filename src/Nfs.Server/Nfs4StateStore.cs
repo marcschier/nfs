@@ -25,6 +25,8 @@ public sealed class Nfs4StateStore
     private readonly Dictionary<string, OpenState> _opens = new(StringComparer.Ordinal);
     private readonly Dictionary<string, LockState> _locks = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DelegationState> _delegations = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _expiredStateIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _revokedDelegationStateIds = new(StringComparer.Ordinal);
     private readonly List<LockWaiter> _lockWaiters = [];
     private readonly long _graceStarted;
     private bool _graceComplete;
@@ -53,6 +55,56 @@ public sealed class Nfs4StateStore
         foreach (ReadOnlyMemory<byte> clientOwner in WaitFor(_stableStorage.ListClientsAsync()))
         {
             _reclaimableClientOwners.Add(Convert.ToHexString(clientOwner.Span));
+        }
+    }
+
+    /// <summary>Releases a lock state identifier that has no active lock ranges.</summary>
+    /// <param name="lockStateId">The lock state identifier to release.</param>
+    /// <returns>The operation status.</returns>
+    public Nfs4Status FreeStateId(Nfs4StateId lockStateId)
+    {
+        lock (_gate)
+        {
+            ExpireLeasesCore();
+            string key = Convert.ToHexString(lockStateId.Other ?? []);
+            if (!_locks.TryGetValue(key, out LockState? state))
+            {
+                return Nfs4Status.BadStateId;
+            }
+
+            if (state.Ranges.Count != 0)
+            {
+                return Nfs4Status.LocksHeld;
+            }
+
+            RenewCore(state.Owner.ClientId);
+            _locks.Remove(key);
+            return Nfs4Status.Ok;
+        }
+    }
+
+    /// <summary>Checks whether a state identifier is currently valid.</summary>
+    /// <param name="stateId">The state identifier to check.</param>
+    /// <returns>The status for the supplied state identifier.</returns>
+    public Nfs4Status CheckStateId(Nfs4StateId stateId)
+    {
+        lock (_gate)
+        {
+            ExpireLeasesCore();
+            string key = Convert.ToHexString(stateId.Other ?? []);
+            if (_revokedDelegationStateIds.Contains(key))
+            {
+                return Nfs4Status.DelegationRevoked;
+            }
+
+            if (_expiredStateIds.Contains(key))
+            {
+                return Nfs4Status.Expired;
+            }
+
+            return _opens.ContainsKey(key) || _locks.ContainsKey(key) || _delegations.ContainsKey(key)
+                ? Nfs4Status.Ok
+                : Nfs4Status.BadStateId;
         }
     }
 
@@ -300,7 +352,11 @@ public sealed class Nfs4StateStore
     {
         lock (_gate)
         {
-            _delegations.Remove(Convert.ToHexString(stateId.Other ?? []));
+            string key = Convert.ToHexString(stateId.Other ?? []);
+            if (_delegations.Remove(key))
+            {
+                _revokedDelegationStateIds.Add(key);
+            }
         }
     }
 
@@ -626,9 +682,9 @@ public sealed class Nfs4StateStore
             _clientsById.Remove(idKey);
         }
 
-        RemoveWhere(_opens, state => state.ClientId == clientId);
-        RemoveWhere(_locks, state => state.Owner.ClientId == clientId);
-        RemoveWhere(_delegations, state => state.ClientId == clientId);
+        RemoveWhere(_opens, state => state.ClientId == clientId, _expiredStateIds);
+        RemoveWhere(_locks, state => state.Owner.ClientId == clientId, _expiredStateIds);
+        RemoveWhere(_delegations, state => state.ClientId == clientId, _expiredStateIds);
         _lockWaiters.RemoveAll(waiter => waiter.Owner.ClientId == clientId);
         WaitFor(_stableStorage.RemoveClientAsync(record.Owner));
     }
@@ -742,7 +798,10 @@ public sealed class Nfs4StateStore
         delegationType == Nfs4OpenResult.DelegationWrite ||
         (writeAccess && delegationType == Nfs4OpenResult.DelegationRead);
 
-    private static void RemoveWhere<T>(Dictionary<string, T> states, Func<T, bool> predicate)
+    private static void RemoveWhere<T>(Dictionary<string, T> states, Func<T, bool> predicate) =>
+        RemoveWhere(states, predicate, null);
+
+    private static void RemoveWhere<T>(Dictionary<string, T> states, Func<T, bool> predicate, HashSet<string>? removed)
     {
         List<string>? keys = null;
         foreach (KeyValuePair<string, T> entry in states)
@@ -762,6 +821,7 @@ public sealed class Nfs4StateStore
         foreach (string key in keys)
         {
             states.Remove(key);
+            removed?.Add(key);
         }
     }
 

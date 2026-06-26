@@ -118,6 +118,13 @@ public sealed class Nfs4CompoundArgs : IXdrSerializable<Nfs4CompoundArgs>
         Nfs4Op.Lock => DecodeLock(ref reader),
         Nfs4Op.LockTest => DecodeLockTest(ref reader),
         Nfs4Op.LockUnlock => DecodeLockUnlock(ref reader),
+        Nfs4Op.BackchannelCtl => DecodeBackchannelCtl(ref reader),
+        Nfs4Op.BindConnToSession => new Nfs4BindConnToSessionOp
+        {
+            SessionId = reader.ReadOpaqueFixed(Nfs4.SessionIdSize).ToArray(),
+            Direction = (Nfs4ChannelDirectionFromClient)reader.ReadUInt32(),
+            UseConnectionInRdmaMode = reader.ReadBool(),
+        },
         Nfs4Op.ExchangeId => DecodeExchangeId(ref reader),
         Nfs4Op.CreateSession => DecodeCreateSession(ref reader),
         Nfs4Op.Sequence => DecodeSequence(ref reader),
@@ -145,6 +152,8 @@ public sealed class Nfs4CompoundArgs : IXdrSerializable<Nfs4CompoundArgs>
         {
             SessionId = reader.ReadOpaqueFixed(Nfs4.SessionIdSize).ToArray(),
         },
+        Nfs4Op.FreeStateId => new Nfs4FreeStateIdOp { StateId = Nfs4StateId.ReadFrom(ref reader) },
+        Nfs4Op.TestStateId => DecodeTestStateId(ref reader),
         Nfs4Op.DestroyClientId => new Nfs4DestroyClientIdOp { ClientId = reader.ReadUInt64() },
         Nfs4Op.ReclaimComplete => new Nfs4ReclaimCompleteOp { OneFileSystem = reader.ReadBool() },
         Nfs4Op.Copy => DecodeCopy(ref reader),
@@ -225,6 +234,41 @@ public sealed class Nfs4CompoundArgs : IXdrSerializable<Nfs4CompoundArgs>
         for (uint i = 0; i < sourceServerCount; i++)
         {
             op.SourceServers.Add(Nfs4NetLocation.ReadFrom(ref reader));
+        }
+
+        return op;
+    }
+
+    private static Nfs4BackchannelCtlOp DecodeBackchannelCtl(ref XdrReader reader)
+    {
+        var op = new Nfs4BackchannelCtlOp { CallbackProgram = reader.ReadUInt32() };
+        op.CallbackSecurityFlavors.Clear();
+        uint count = reader.ReadUInt32();
+        if (count > Nfs4CompoundArgs.MaxOperations)
+        {
+            throw new XdrException("BACKCHANNEL_CTL security parameter count is implausibly large.");
+        }
+
+        for (uint i = 0; i < count; i++)
+        {
+            op.CallbackSecurityFlavors.Add(reader.ReadInt32());
+        }
+
+        return op;
+    }
+
+    private static Nfs4TestStateIdOp DecodeTestStateId(ref XdrReader reader)
+    {
+        var op = new Nfs4TestStateIdOp();
+        uint count = reader.ReadUInt32();
+        if (count > Nfs4CompoundArgs.MaxOperations)
+        {
+            throw new XdrException("TEST_STATEID stateid count is implausibly large.");
+        }
+
+        for (uint i = 0; i < count; i++)
+        {
+            op.StateIds.Add(Nfs4StateId.ReadFrom(ref reader));
         }
 
         return op;
@@ -603,9 +647,11 @@ public sealed class Nfs4CompoundResult : IXdrSerializable<Nfs4CompoundResult>
         Nfs4Op.Lock => new Nfs4LockResult(),
         Nfs4Op.LockTest => new Nfs4LockTestResult(),
         Nfs4Op.LockUnlock => new Nfs4LockUnlockResult(),
+        Nfs4Op.BindConnToSession => new Nfs4BindConnToSessionResult(),
         Nfs4Op.ExchangeId => new Nfs4ExchangeIdResult(),
         Nfs4Op.CreateSession => new Nfs4CreateSessionResult(),
         Nfs4Op.Sequence => new Nfs4SequenceResult(),
+        Nfs4Op.TestStateId => new Nfs4TestStateIdResult(),
         Nfs4Op.GetDeviceInfo => new Nfs4GetDeviceInfoResult(),
         Nfs4Op.LayoutGet => new Nfs4LayoutGetResult(),
         Nfs4Op.LayoutCommit => new Nfs4LayoutCommitResult(),

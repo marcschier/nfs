@@ -2,6 +2,62 @@ using Nfs.Xdr;
 
 namespace Nfs.Protocol.V4;
 
+/// <summary>Channel directions selected by BIND_CONN_TO_SESSION (<c>channel_dir_from_server4</c>).</summary>
+public enum Nfs4ChannelDirectionFromServer
+{
+    /// <summary>The connection is bound for fore-channel traffic.</summary>
+    Fore = 1,
+
+    /// <summary>The connection is bound for back-channel traffic.</summary>
+    Back = 2,
+
+    /// <summary>The connection is bound for both fore- and back-channel traffic.</summary>
+    Both = 3,
+}
+
+/// <summary>The result of BIND_CONN_TO_SESSION.</summary>
+public sealed class Nfs4BindConnToSessionResult : Nfs4ResOp
+{
+    /// <summary>Gets or sets the session identifier echoed by the server (16 bytes).</summary>
+    public byte[] SessionId { get; set; } = new byte[Nfs4.SessionIdSize];
+
+    /// <summary>Gets or sets the channel direction selected by the server.</summary>
+    public Nfs4ChannelDirectionFromServer Direction { get; set; } = Nfs4ChannelDirectionFromServer.Fore;
+
+    /// <summary>Gets or sets whether the connection is used in RDMA mode.</summary>
+    public bool UseConnectionInRdmaMode { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.BindConnToSession;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteInt32((int)Status);
+        if (!IsSuccess)
+        {
+            return;
+        }
+
+        writer.WriteOpaqueFixed(SessionId);
+        writer.WriteUInt32((uint)Direction);
+        writer.WriteBool(UseConnectionInRdmaMode);
+    }
+
+    /// <inheritdoc/>
+    protected override void DecodeResok(ref XdrReader reader)
+    {
+        if (!IsSuccess)
+        {
+            return;
+        }
+
+        SessionId = reader.ReadOpaqueFixed(Nfs4.SessionIdSize).ToArray();
+        Direction = (Nfs4ChannelDirectionFromServer)reader.ReadUInt32();
+        UseConnectionInRdmaMode = reader.ReadBool();
+    }
+}
+
 /// <summary>The result of EXCHANGE_ID (the client identifier and sequence on success).</summary>
 public sealed class Nfs4ExchangeIdResult : Nfs4ResOp
 {
@@ -112,6 +168,53 @@ public sealed class Nfs4CreateSessionResult : Nfs4ResOp
         Flags = reader.ReadUInt32();
         ForeChannel = Nfs4ChannelAttributes.ReadFrom(ref reader);
         BackChannel = Nfs4ChannelAttributes.ReadFrom(ref reader);
+    }
+}
+
+/// <summary>The result of TEST_STATEID.</summary>
+public sealed class Nfs4TestStateIdResult : Nfs4ResOp
+{
+    /// <summary>Gets the per-stateid statuses returned by the server.</summary>
+    public List<Nfs4Status> StateStatuses { get; } = [];
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.TestStateId;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        writer.WriteInt32((int)Status);
+        if (!IsSuccess)
+        {
+            return;
+        }
+
+        writer.WriteUInt32((uint)StateStatuses.Count);
+        foreach (Nfs4Status status in StateStatuses)
+        {
+            writer.WriteInt32((int)status);
+        }
+    }
+
+    /// <inheritdoc/>
+    protected override void DecodeResok(ref XdrReader reader)
+    {
+        if (!IsSuccess)
+        {
+            return;
+        }
+
+        uint count = reader.ReadUInt32();
+        if (count > Nfs4CompoundArgs.MaxOperations)
+        {
+            throw new XdrException("TEST_STATEID status count is implausibly large.");
+        }
+
+        StateStatuses.Clear();
+        for (uint i = 0; i < count; i++)
+        {
+            StateStatuses.Add((Nfs4Status)reader.ReadInt32());
+        }
     }
 }
 

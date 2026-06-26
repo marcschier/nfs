@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 
 using Nfs.Protocol.V4;
+using Nfs.Rpc;
 
 namespace Nfs.Server;
 
@@ -101,6 +102,74 @@ public sealed class Nfs41SessionStore
                 callbackProgram,
                 backChannelTransport);
             return sessionId;
+        }
+    }
+
+    /// <summary>Binds a transport connection to a known session.</summary>
+    /// <param name="sessionId">The session identifier.</param>
+    /// <param name="direction">The requested channel direction.</param>
+    /// <param name="useConnectionInRdmaMode">Whether RDMA mode was requested.</param>
+    /// <param name="connection">The current RPC duplex connection.</param>
+    /// <returns>The status, selected channel direction, and RDMA mode.</returns>
+    public (Nfs4Status Status, Nfs4ChannelDirectionFromServer Direction, bool UseConnectionInRdmaMode) BindConnection(
+        byte[] sessionId,
+        Nfs4ChannelDirectionFromClient direction,
+        bool useConnectionInRdmaMode,
+        RpcDuplexConnection? connection)
+    {
+        lock (_gate)
+        {
+            string sessionKey = Convert.ToHexString(sessionId ?? []);
+            if (!_sessions.TryGetValue(sessionKey, out Session? session))
+            {
+                return (Nfs4Status.BadSession, Nfs4ChannelDirectionFromServer.Fore, false);
+            }
+
+            Nfs4ChannelDirectionFromServer selected = direction switch
+            {
+                Nfs4ChannelDirectionFromClient.Back => Nfs4ChannelDirectionFromServer.Back,
+                Nfs4ChannelDirectionFromClient.ForeOrBoth => session.BackChannelSlots.Length == 0
+                    ? Nfs4ChannelDirectionFromServer.Fore
+                    : Nfs4ChannelDirectionFromServer.Both,
+                Nfs4ChannelDirectionFromClient.BackOrBoth => session.BackChannelSlots.Length == 0
+                    ? Nfs4ChannelDirectionFromServer.Back
+                    : Nfs4ChannelDirectionFromServer.Both,
+                _ => Nfs4ChannelDirectionFromServer.Fore,
+            };
+
+            if (connection is not null &&
+                selected is Nfs4ChannelDirectionFromServer.Back or Nfs4ChannelDirectionFromServer.Both)
+            {
+                session.BackChannelTransport = new Nfs41ConnectionBackChannelTransport(connection);
+            }
+
+            return (Nfs4Status.Ok, selected, useConnectionInRdmaMode);
+        }
+    }
+
+    /// <summary>Updates the callback program and security flavors for an existing session.</summary>
+    /// <param name="sessionId">The session identifier.</param>
+    /// <param name="callbackProgram">The callback RPC program number.</param>
+    /// <param name="securityFlavors">The callback security flavors.</param>
+    /// <returns><see langword="true"/> when the session was updated.</returns>
+    public bool UpdateBackChannel(byte[]? sessionId, uint callbackProgram, IReadOnlyCollection<int> securityFlavors)
+    {
+        lock (_gate)
+        {
+            string sessionKey = Convert.ToHexString(sessionId ?? []);
+            if (!_sessions.TryGetValue(sessionKey, out Session? session))
+            {
+                return false;
+            }
+
+            session.CallbackProgram = callbackProgram;
+            session.CallbackSecurityFlavors.Clear();
+            foreach (int flavor in securityFlavors)
+            {
+                session.CallbackSecurityFlavors.Add(flavor);
+            }
+
+            return true;
         }
     }
 
@@ -329,9 +398,11 @@ public sealed class Nfs41SessionStore
 
         public ulong ClientId { get; }
 
-        public uint CallbackProgram { get; }
+        public uint CallbackProgram { get; set; }
 
-        public INfs41BackChannelTransport? BackChannelTransport { get; }
+        public List<int> CallbackSecurityFlavors { get; } = [0];
+
+        public INfs41BackChannelTransport? BackChannelTransport { get; set; }
 
         public Slot[] Slots { get; }
 
