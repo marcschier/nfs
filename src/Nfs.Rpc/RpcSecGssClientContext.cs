@@ -44,31 +44,51 @@ public sealed class RpcSecGssClientContext
         ArgumentNullException.ThrowIfNull(mechanism);
 
         IGssContext context = mechanism.CreateClientContext(targetName);
-        GssTokenResult firstStep = context.Init(ReadOnlySpan<byte>.Empty);
-        OpaqueAuth credential = RpcSecGssWire.CreateCredential(
-            RpcSecGssProcedure.Init, sequenceNumber: 0, RpcSecGssService.None, ReadOnlySpan<byte>.Empty);
-        var argument = new RpcSecGssInitArgument(firstStep.OutputToken);
-        RpcReply reply = await client.CallAsync(
-                program, version, procedure: 0, credential, OpaqueAuth.None, argument, cancellationToken)
-            .ConfigureAwait(false);
-        if (!reply.IsSuccess)
+        GssTokenResult step = context.Init(ReadOnlySpan<byte>.Empty);
+        RpcSecGssProcedure procedure = RpcSecGssProcedure.Init;
+        ReadOnlyMemory<byte> handle = ReadOnlyMemory<byte>.Empty;
+        uint sequenceWindow = 0;
+        bool serverEstablished = false;
+        while (!serverEstablished || !context.IsEstablished || step.OutputToken.Length != 0)
         {
-            throw new RpcException($"RPCSEC_GSS INIT failed with status {reply.Header.Status}/{reply.Header.Accept}.");
+            OpaqueAuth credential = RpcSecGssWire.CreateCredential(
+                procedure, sequenceNumber: 0, RpcSecGssService.None, handle.Span);
+            var argument = new RpcSecGssInitArgument(step.OutputToken);
+            RpcReply reply = await client.CallAsync(
+                    program, version, procedure: 0, credential, OpaqueAuth.None, argument, cancellationToken)
+                .ConfigureAwait(false);
+            if (!reply.IsSuccess)
+            {
+                throw new RpcException($"RPCSEC_GSS INIT failed with status {reply.Header.Status}/{reply.Header.Accept}.");
+            }
+
+            RpcSecGssInitResult initResult = RpcSecGssWire.DecodeInitResult(reply.Result);
+            handle = initResult.Handle;
+            sequenceWindow = initResult.SequenceWindow;
+            serverEstablished = initResult.MajorStatus == GssMajorStatus.Complete;
+            if (initResult.MajorStatus is not (GssMajorStatus.Complete or GssMajorStatus.ContinueNeeded))
+            {
+                throw new RpcException($"RPCSEC_GSS INIT failed with GSS status {initResult.MajorStatus}.");
+            }
+
+            if (!context.IsEstablished || !initResult.OutputToken.IsEmpty)
+            {
+                step = context.Init(initResult.OutputToken.Span);
+            }
+            else
+            {
+                step = new GssTokenResult(ReadOnlyMemory<byte>.Empty, GssMajorStatus.Complete, 0);
+            }
+
+            procedure = RpcSecGssProcedure.ContinueInit;
         }
 
-        RpcSecGssInitResult initResult = RpcSecGssWire.DecodeInitResult(reply.Result);
-        if (initResult.MajorStatus != GssMajorStatus.Complete)
-        {
-            throw new RpcException($"RPCSEC_GSS INIT requires unsupported continuation: {initResult.MajorStatus}.");
-        }
-
-        GssTokenResult finalStep = context.Init(initResult.OutputToken.Span);
-        if (finalStep.MajorStatus != GssMajorStatus.Complete || !context.IsEstablished)
+        if (!context.IsEstablished)
         {
             throw new RpcException("RPCSEC_GSS client context was not established.");
         }
 
-        return new RpcSecGssClientContext(context, initResult.Handle, initResult.SequenceWindow);
+        return new RpcSecGssClientContext(context, handle, sequenceWindow);
     }
 
     internal RpcSecGssClientCall CreateCall<TArgs>(
