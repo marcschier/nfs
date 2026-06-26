@@ -79,6 +79,8 @@ public sealed class Nfs4CompoundArgs : IXdrSerializable<Nfs4CompoundArgs>
             Style = (Nfs4SecInfoStyle)reader.ReadUInt32(),
         },
         Nfs4Op.GetAttr => new Nfs4GetAttrOp { Request = Nfs4Bitmap.ReadFrom(ref reader) },
+        Nfs4Op.Verify => new Nfs4VerifyOp { Attributes = Nfs4FAttr.ReadFrom(ref reader) },
+        Nfs4Op.NVerify => new Nfs4NverifyOp { Attributes = Nfs4FAttr.ReadFrom(ref reader) },
         Nfs4Op.Access => new Nfs4AccessOp { Access = reader.ReadUInt32() },
         Nfs4Op.Read => DecodeRead(ref reader),
         Nfs4Op.Write => DecodeWrite(ref reader),
@@ -99,6 +101,13 @@ public sealed class Nfs4CompoundArgs : IXdrSerializable<Nfs4CompoundArgs>
         {
             OpenStateId = Nfs4StateId.ReadFrom(ref reader),
             Seqid = reader.ReadUInt32(),
+        },
+        Nfs4Op.OpenDowngrade => new Nfs4OpenDowngradeOp
+        {
+            OpenStateId = Nfs4StateId.ReadFrom(ref reader),
+            Seqid = reader.ReadUInt32(),
+            ShareAccess = reader.ReadUInt32(),
+            ShareDeny = reader.ReadUInt32(),
         },
         Nfs4Op.Close => new Nfs4CloseOp
         {
@@ -415,15 +424,18 @@ public sealed class Nfs4CompoundArgs : IXdrSerializable<Nfs4CompoundArgs>
         var openType = (Nfs4OpenType)reader.ReadUInt32();
         var createMode = Nfs4CreateMode.Unchecked;
         Nfs4FAttr createAttributes = default;
+        byte[] createVerifier = new byte[Nfs4.VerifierSize];
         if (openType == Nfs4OpenType.Create)
         {
             createMode = (Nfs4CreateMode)reader.ReadUInt32();
             if (createMode == Nfs4CreateMode.Exclusive)
             {
-                throw new XdrException("EXCLUSIVE4 create is not supported.");
+                createVerifier = reader.ReadOpaqueFixed(Nfs4.VerifierSize).ToArray();
             }
-
-            createAttributes = Nfs4FAttr.ReadFrom(ref reader);
+            else
+            {
+                createAttributes = Nfs4FAttr.ReadFrom(ref reader);
+            }
         }
 
         uint claimType = reader.ReadUInt32();
@@ -452,6 +464,7 @@ public sealed class Nfs4CompoundArgs : IXdrSerializable<Nfs4CompoundArgs>
             OpenType = openType,
             CreateMode = createMode,
             CreateAttributes = createAttributes,
+            CreateVerifier = createVerifier,
             Name = name,
             Reclaim = reclaim,
         };
@@ -585,6 +598,7 @@ public sealed class Nfs4CompoundResult : IXdrSerializable<Nfs4CompoundResult>
         Nfs4Op.SetClientId => new Nfs4SetClientIdResult(),
         Nfs4Op.Open => new Nfs4OpenResult(),
         Nfs4Op.OpenConfirm => new Nfs4StateIdResult(Nfs4Op.OpenConfirm),
+        Nfs4Op.OpenDowngrade => new Nfs4StateIdResult(Nfs4Op.OpenDowngrade),
         Nfs4Op.Close => new Nfs4StateIdResult(Nfs4Op.Close),
         Nfs4Op.Lock => new Nfs4LockResult(),
         Nfs4Op.LockTest => new Nfs4LockTestResult(),

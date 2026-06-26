@@ -153,6 +153,32 @@ public sealed class Nfs4GetAttrOp : Nfs4ArgOp
     public override void Encode(ref XdrWriter writer) => Request.WriteTo(ref writer);
 }
 
+/// <summary>VERIFY: confirm the current object's attributes match the supplied fattr4.</summary>
+public sealed class Nfs4VerifyOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the attributes to compare with the current file handle.</summary>
+    public Nfs4FAttr Attributes { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.Verify;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer) => Attributes.WriteTo(ref writer);
+}
+
+/// <summary>NVERIFY: confirm the current object's attributes differ from the supplied fattr4.</summary>
+public sealed class Nfs4NverifyOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the attributes to compare with the current file handle.</summary>
+    public Nfs4FAttr Attributes { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.NVerify;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer) => Attributes.WriteTo(ref writer);
+}
+
 /// <summary>ACCESS: check the caller's permissions on the current file handle.</summary>
 public sealed class Nfs4AccessOp : Nfs4ArgOp
 {

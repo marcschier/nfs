@@ -154,6 +154,73 @@ public sealed class Nfs4WireTests
     }
 
     [Fact]
+    public void Nfs40CompletenessOperations_RoundTrip()
+    {
+        var stateId = new Nfs4StateId { Sequence = 7, Other = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] };
+        Nfs4FAttr attributes = new Nfs4FileAttributes { Size = 123 }.Encode(Nfs4Bitmap.Of(Nfs4AttributeId.Size));
+        var args = new Nfs4CompoundArgs { Tag = "m27", MinorVersion = Nfs4.MinorVersion0 };
+        args.Operations.Add(new Nfs4OpenDowngradeOp
+        {
+            OpenStateId = stateId,
+            Seqid = 8,
+            ShareAccess = Nfs4ShareAccess.Read,
+        });
+        args.Operations.Add(new Nfs4VerifyOp { Attributes = attributes });
+        args.Operations.Add(new Nfs4NverifyOp { Attributes = attributes });
+        args.Operations.Add(new Nfs4OpenOp
+        {
+            Seqid = 9,
+            ShareAccess = Nfs4ShareAccess.Both,
+            ClientId = 42,
+            Owner = "owner"u8.ToArray(),
+            OpenType = Nfs4OpenType.Create,
+            CreateMode = Nfs4CreateMode.Exclusive,
+            CreateVerifier = [8, 7, 6, 5, 4, 3, 2, 1],
+            Name = "created.txt",
+        });
+
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        var writer = new XdrWriter(buffer);
+        args.WriteTo(ref writer);
+
+        var reader = new XdrReader(buffer.WrittenSpan);
+        Nfs4CompoundArgs decoded = Nfs4CompoundArgs.ReadFrom(ref reader);
+
+        var downgrade = Assert.IsType<Nfs4OpenDowngradeOp>(decoded.Operations[0]);
+        Assert.Equal(stateId.Other, downgrade.OpenStateId.Other);
+        Assert.Equal(8u, downgrade.Seqid);
+        Assert.Equal(Nfs4ShareAccess.Read, downgrade.ShareAccess);
+        Assert.Equal(attributes.Values, Assert.IsType<Nfs4VerifyOp>(decoded.Operations[1]).Attributes.Values);
+        Assert.Equal(attributes.Values, Assert.IsType<Nfs4NverifyOp>(decoded.Operations[2]).Attributes.Values);
+        var open = Assert.IsType<Nfs4OpenOp>(decoded.Operations[3]);
+        Assert.Equal(Nfs4CreateMode.Exclusive, open.CreateMode);
+        Assert.Equal([8, 7, 6, 5, 4, 3, 2, 1], open.CreateVerifier);
+    }
+
+    [Fact]
+    public void OpenDowngradeResult_RoundTrips()
+    {
+        var stateId = new Nfs4StateId { Sequence = 2, Other = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] };
+        var result = new Nfs4CompoundResult { Status = Nfs4Status.Ok, Tag = "downgrade-result" };
+        result.Operations.Add(new Nfs4StateIdResult(Nfs4Op.OpenDowngrade)
+        {
+            Status = Nfs4Status.Ok,
+            StateId = stateId,
+        });
+
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        var writer = new XdrWriter(buffer);
+        result.WriteTo(ref writer);
+
+        var reader = new XdrReader(buffer.WrittenSpan);
+        Nfs4CompoundResult decoded = Nfs4CompoundResult.ReadFrom(ref reader);
+
+        var downgrade = Assert.IsType<Nfs4StateIdResult>(decoded.Operations[0]);
+        Assert.Equal(Nfs4Op.OpenDowngrade, downgrade.Op);
+        Assert.Equal(stateId.Other, downgrade.StateId.Other);
+    }
+
+    [Fact]
     public void CopyOffloadOperations_RoundTrip()
     {
         var stateId = new Nfs4StateId { Sequence = 9, Other = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] };

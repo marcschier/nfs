@@ -121,6 +121,9 @@ public sealed class Nfs4OpenOp : Nfs4ArgOp
     /// <summary>Gets or sets the initial attributes for a create.</summary>
     public Nfs4FAttr CreateAttributes { get; set; }
 
+    /// <summary>Gets or sets the exclusive create verifier (used only for EXCLUSIVE4 creates).</summary>
+    public byte[] CreateVerifier { get; set; } = new byte[Nfs4.VerifierSize];
+
     /// <summary>Gets or sets the component name to open within the current directory.</summary>
     public string Name { get; set; } = string.Empty;
 
@@ -143,7 +146,14 @@ public sealed class Nfs4OpenOp : Nfs4ArgOp
         if (OpenType == Nfs4OpenType.Create)
         {
             writer.WriteUInt32((uint)CreateMode);
-            CreateAttributes.WriteTo(ref writer); // UNCHECKED/GUARDED carry attributes; EXCLUSIVE is unsupported here.
+            if (CreateMode == Nfs4CreateMode.Exclusive)
+            {
+                writer.WriteOpaqueFixed(CreateVerifier);
+            }
+            else
+            {
+                CreateAttributes.WriteTo(ref writer);
+            }
         }
 
         if (Reclaim)
@@ -176,6 +186,34 @@ public sealed class Nfs4OpenConfirmOp : Nfs4ArgOp
     {
         OpenStateId.WriteTo(ref writer);
         writer.WriteUInt32(Seqid);
+    }
+}
+
+/// <summary>OPEN_DOWNGRADE: narrow share access/deny on an open state identifier.</summary>
+public sealed class Nfs4OpenDowngradeOp : Nfs4ArgOp
+{
+    /// <summary>Gets or sets the open state identifier to downgrade.</summary>
+    public Nfs4StateId OpenStateId { get; set; }
+
+    /// <summary>Gets or sets the open-owner sequence value.</summary>
+    public uint Seqid { get; set; }
+
+    /// <summary>Gets or sets the narrowed share access.</summary>
+    public uint ShareAccess { get; set; } = Nfs4ShareAccess.Read;
+
+    /// <summary>Gets or sets the narrowed share deny.</summary>
+    public uint ShareDeny { get; set; }
+
+    /// <inheritdoc/>
+    public override Nfs4Op Op => Nfs4Op.OpenDowngrade;
+
+    /// <inheritdoc/>
+    public override void Encode(ref XdrWriter writer)
+    {
+        OpenStateId.WriteTo(ref writer);
+        writer.WriteUInt32(Seqid);
+        writer.WriteUInt32(ShareAccess);
+        writer.WriteUInt32(ShareDeny);
     }
 }
 

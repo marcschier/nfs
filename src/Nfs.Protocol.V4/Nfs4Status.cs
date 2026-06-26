@@ -83,6 +83,9 @@ public enum Nfs4Status
     /// <summary>The request was initiated but not completed; retry later (NFS4ERR_DELAY).</summary>
     Delay = 10008,
 
+    /// <summary>The compared attributes were the same (NFS4ERR_SAME).</summary>
+    Same = 10009,
+
     /// <summary>A byte-range lock conflicts with an existing lock (NFS4ERR_DENIED).</summary>
     LockDenied = 10010,
 
@@ -118,6 +121,9 @@ public enum Nfs4Status
 
     /// <summary>The minor version is not supported (NFS4ERR_MINOR_VERS_MISMATCH).</summary>
     MinorVersionMismatch = 10021,
+
+    /// <summary>The compared attributes were not the same (NFS4ERR_NOT_SAME).</summary>
+    NotSame = 10027,
 
     /// <summary>An operation was used that is not valid for the current file handle type.</summary>
     WrongType = 10083,

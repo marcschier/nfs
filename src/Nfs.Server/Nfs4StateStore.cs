@@ -188,12 +188,14 @@ public sealed class Nfs4StateStore
     /// <param name="file">The file handle.</param>
     /// <param name="clientId">The owning client identifier.</param>
     /// <param name="shareAccess">The requested share access.</param>
+    /// <param name="shareDeny">The requested share deny.</param>
     /// <returns>The new open state identifier.</returns>
     /// <exception cref="NfsException">The client is not confirmed.</exception>
     public (Nfs4StateId OpenStateId, Nfs4StateId? DelegationStateId, uint DelegationType) Open(
         NfsFileHandle file,
         ulong clientId,
-        uint shareAccess)
+        uint shareAccess,
+        uint shareDeny)
     {
         lock (_gate)
         {
@@ -208,7 +210,7 @@ public sealed class Nfs4StateStore
             uint delegationType = GetGrantableDelegationType(fileKey, shareAccess);
             byte[] other = MakeOther(++_nextStateId);
             var stateId = new Nfs4StateId { Sequence = 1, Other = other };
-            _opens[Convert.ToHexString(other)] = new OpenState(file, clientId, shareAccess);
+            _opens[Convert.ToHexString(other)] = new OpenState(file, clientId, shareAccess, shareDeny);
             Nfs4StateId? delegationStateId = null;
             if (delegationType != Nfs4OpenResult.DelegationNone)
             {
@@ -314,6 +316,19 @@ public sealed class Nfs4StateStore
         }
     }
 
+    /// <summary>Checks whether an open state identifier currently has write share access.</summary>
+    /// <param name="stateId">The open state identifier.</param>
+    /// <returns><see langword="true"/> when the state identifier allows writes.</returns>
+    public bool HasWriteOpenAccess(Nfs4StateId stateId)
+    {
+        lock (_gate)
+        {
+            string key = Convert.ToHexString(stateId.Other ?? []);
+            return _opens.TryGetValue(key, out OpenState? state) &&
+                (state.ShareAccess & Nfs4ShareAccess.Write) != 0;
+        }
+    }
+
     /// <summary>Gets the client that owns any known state identifier.</summary>
     /// <param name="stateId">The state identifier.</param>
     /// <returns>The owning client identifier, or 0 when the state identifier is unknown or anonymous.</returns>
@@ -346,6 +361,30 @@ public sealed class Nfs4StateStore
         {
             OpenState state = Require(stateId);
             RenewCore(state.ClientId);
+            state.Sequence++;
+            return new Nfs4StateId { Sequence = state.Sequence, Other = stateId.Other ?? [] };
+        }
+    }
+
+    /// <summary>Downgrades an open's share access/deny and advances its sequence.</summary>
+    /// <param name="stateId">The open state identifier.</param>
+    /// <param name="shareAccess">The requested narrowed share access.</param>
+    /// <param name="shareDeny">The requested narrowed share deny.</param>
+    /// <returns>The updated state identifier.</returns>
+    /// <exception cref="NfsException">The state identifier is unknown or the shares are not a subset.</exception>
+    public Nfs4StateId DowngradeOpen(Nfs4StateId stateId, uint shareAccess, uint shareDeny)
+    {
+        lock (_gate)
+        {
+            OpenState state = Require(stateId);
+            if ((shareAccess & ~state.ShareAccess) != 0 || (shareDeny & ~state.ShareDeny) != 0)
+            {
+                throw new NfsException(NfsStatus.InvalidArgument);
+            }
+
+            RenewCore(state.ClientId);
+            state.ShareAccess = shareAccess;
+            state.ShareDeny = shareDeny;
             state.Sequence++;
             return new Nfs4StateId { Sequence = state.Sequence, Other = stateId.Other ?? [] };
         }
@@ -795,13 +834,15 @@ public sealed class Nfs4StateStore
         public Nfs4ClientCallbackInfo? Callback { get; set; }
     }
 
-    private sealed class OpenState(NfsFileHandle file, ulong clientId, uint shareAccess)
+    private sealed class OpenState(NfsFileHandle file, ulong clientId, uint shareAccess, uint shareDeny)
     {
         public NfsFileHandle File { get; } = file;
 
         public ulong ClientId { get; } = clientId;
 
-        public uint ShareAccess { get; } = shareAccess;
+        public uint ShareAccess { get; set; } = shareAccess;
+
+        public uint ShareDeny { get; set; } = shareDeny;
 
         public uint Sequence { get; set; } = 1;
     }

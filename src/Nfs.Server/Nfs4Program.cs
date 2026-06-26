@@ -31,6 +31,8 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
     private readonly TimeProvider _timeProvider;
     private readonly object _offloadGate = new();
     private readonly Dictionary<string, OffloadRecord> _offloads = new(StringComparer.Ordinal);
+    private readonly object _exclusiveCreateGate = new();
+    private readonly Dictionary<string, byte[]> _exclusiveCreateVerifiers = new(StringComparer.Ordinal);
     private IPEndPoint? _copySourceEndPoint;
     private ulong _nextOffloadId;
     private bool _rpcSecGssEnabled;
@@ -190,6 +192,8 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
                 Nfs4SecInfoNoNameOp secInfoNoName => await SecInfoNoNameAsync(
                     context, secInfoNoName, cancellationToken).ConfigureAwait(false),
                 Nfs4GetAttrOp getAttr => await GetAttrAsync(context, getAttr, cancellationToken).ConfigureAwait(false),
+                Nfs4VerifyOp verify => await VerifyAsync(context, verify, cancellationToken).ConfigureAwait(false),
+                Nfs4NverifyOp nverify => await NverifyAsync(context, nverify, cancellationToken).ConfigureAwait(false),
                 Nfs4AccessOp access => await AccessAsync(context, access, cancellationToken).ConfigureAwait(false),
                 Nfs4ReadOp read => await ReadAsync(context, read, cancellationToken).ConfigureAwait(false),
                 Nfs4WriteOp write => await WriteAsync(context, write, cancellationToken).ConfigureAwait(false),
@@ -203,6 +207,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
                 Nfs4SetClientIdConfirmOp confirm => SetClientIdConfirm(confirm),
                 Nfs4OpenOp open => await OpenAsync(context, open, cancellationToken).ConfigureAwait(false),
                 Nfs4OpenConfirmOp openConfirm => OpenConfirm(openConfirm),
+                Nfs4OpenDowngradeOp openDowngrade => OpenDowngrade(openDowngrade),
                 Nfs4CloseOp close => Close(close),
                 Nfs4RenewOp renew => Renew(renew),
                 Nfs4DelegReturnOp delegReturn => DelegReturn(delegReturn),
@@ -374,6 +379,44 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         return new Nfs4GetAttrResult { Status = Nfs4Status.Ok, Attributes = encoded };
     }
 
+    private async ValueTask<Nfs4StatusResult> VerifyAsync(
+        CompoundContext context,
+        Nfs4VerifyOp op,
+        CancellationToken cancellationToken)
+    {
+        if (context.Current is not { } current)
+        {
+            return new Nfs4StatusResult(Nfs4Op.Verify) { Status = Nfs4Status.NoFileHandle };
+        }
+
+        Nfs4FAttr attributes = await EncodeCurrentAttributesAsync(
+            current, op.Attributes.Mask, cancellationToken).ConfigureAwait(false);
+        bool same = AreSameAttributes(op.Attributes, attributes);
+        return new Nfs4StatusResult(Nfs4Op.Verify)
+        {
+            Status = same ? Nfs4Status.Ok : Nfs4Status.NotSame,
+        };
+    }
+
+    private async ValueTask<Nfs4StatusResult> NverifyAsync(
+        CompoundContext context,
+        Nfs4NverifyOp op,
+        CancellationToken cancellationToken)
+    {
+        if (context.Current is not { } current)
+        {
+            return new Nfs4StatusResult(Nfs4Op.NVerify) { Status = Nfs4Status.NoFileHandle };
+        }
+
+        Nfs4FAttr attributes = await EncodeCurrentAttributesAsync(
+            current, op.Attributes.Mask, cancellationToken).ConfigureAwait(false);
+        bool same = AreSameAttributes(op.Attributes, attributes);
+        return new Nfs4StatusResult(Nfs4Op.NVerify)
+        {
+            Status = same ? Nfs4Status.Same : Nfs4Status.Ok,
+        };
+    }
+
     private async ValueTask<Nfs4ResOp> AccessAsync(
         CompoundContext context,
         Nfs4AccessOp op,
@@ -440,6 +483,11 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         if (context.Current is not { } current)
         {
             return new Nfs4StatusResult(Nfs4Op.Write) { Status = Nfs4Status.NoFileHandle };
+        }
+
+        if (!IsAnonymousStateId(op.StateId) && !_state.HasWriteOpenAccess(op.StateId))
+        {
+            return new Nfs4WriteResult { Status = Nfs4Status.BadStateId };
         }
 
         ulong clientId = _state.GetOpenClientId(op.StateId);
@@ -817,7 +865,14 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             NfsFileHandle? existing = await TryLookupAsync(directory, op.Name, cancellationToken).ConfigureAwait(false);
             if (existing is { } found)
             {
-                if (op.CreateMode == Nfs4CreateMode.Guarded)
+                if (op.CreateMode == Nfs4CreateMode.Exclusive)
+                {
+                    if (!HasExclusiveCreateVerifier(found, op.CreateVerifier))
+                    {
+                        return new Nfs4OpenResult { Status = Nfs4Status.AlreadyExists };
+                    }
+                }
+                else if (op.CreateMode == Nfs4CreateMode.Guarded)
                 {
                     return new Nfs4OpenResult { Status = Nfs4Status.AlreadyExists };
                 }
@@ -828,6 +883,10 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             {
                 file = await _fileSystem.CreateAsync(directory, op.Name, cancellationToken).ConfigureAwait(false);
                 created = true;
+                if (op.CreateMode == Nfs4CreateMode.Exclusive)
+                {
+                    RememberExclusiveCreateVerifier(file, op.CreateVerifier);
+                }
             }
 
         }
@@ -843,7 +902,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
             return new Nfs4OpenResult { Status = Nfs4Status.Delay };
         }
 
-        if (op.OpenType == Nfs4OpenType.Create)
+        if (op.OpenType == Nfs4OpenType.Create && op.CreateMode != Nfs4CreateMode.Exclusive)
         {
             applied = await ApplyCreateAttributesAsync(file, op.CreateAttributes, cancellationToken)
                 .ConfigureAwait(false);
@@ -852,7 +911,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         try
         {
             (Nfs4StateId stateId, Nfs4StateId? delegationStateId, uint delegationType) =
-                _state.Open(file, op.ClientId, op.ShareAccess);
+                _state.Open(file, op.ClientId, op.ShareAccess, op.ShareDeny);
             ulong after = await ChangeOfAsync(directory, cancellationToken).ConfigureAwait(false);
             context.Current = file;
             return new Nfs4OpenResult
@@ -882,6 +941,19 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         catch (NfsException ex)
         {
             return new Nfs4StateIdResult(Nfs4Op.OpenConfirm) { Status = Nfs4StatusMapping.FromStatus(ex.Status) };
+        }
+    }
+
+    private Nfs4StateIdResult OpenDowngrade(Nfs4OpenDowngradeOp op)
+    {
+        try
+        {
+            Nfs4StateId stateId = _state.DowngradeOpen(op.OpenStateId, op.ShareAccess, op.ShareDeny);
+            return new Nfs4StateIdResult(Nfs4Op.OpenDowngrade) { Status = Nfs4Status.Ok, StateId = stateId };
+        }
+        catch (NfsException ex)
+        {
+            return new Nfs4StateIdResult(Nfs4Op.OpenDowngrade) { Status = Nfs4StatusMapping.FromStatus(ex.Status) };
         }
     }
 
@@ -1946,6 +2018,19 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         }
     }
 
+    private async ValueTask<Nfs4FAttr> EncodeCurrentAttributesAsync(
+        NfsFileHandle current,
+        Nfs4Bitmap requested,
+        CancellationToken cancellationToken)
+    {
+        NfsFileAttributes attributes = await _fileSystem
+            .GetAttributesAsync(current, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<NfsAccessControlEntry>? acl = requested.IsSet(Nfs4AttributeId.Acl)
+            ? await _fileSystem.GetAccessControlListAsync(current, cancellationToken).ConfigureAwait(false)
+            : null;
+        return Nfs4Mapping.BuildAttributes(attributes, current, acl).Encode(requested);
+    }
+
     private async ValueTask<Nfs4Bitmap> ApplyCreateAttributesAsync(
         NfsFileHandle file,
         Nfs4FAttr attributes,
@@ -1975,10 +2060,35 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         return Nfs4Mapping.ChangeId(attributes);
     }
 
+    private bool HasExclusiveCreateVerifier(NfsFileHandle file, byte[] verifier)
+    {
+        lock (_exclusiveCreateGate)
+        {
+            return _exclusiveCreateVerifiers.TryGetValue(Convert.ToHexString(file.Span), out byte[]? existing) &&
+                existing.AsSpan().SequenceEqual(verifier ?? []);
+        }
+    }
+
+    private void RememberExclusiveCreateVerifier(NfsFileHandle file, byte[] verifier)
+    {
+        lock (_exclusiveCreateGate)
+        {
+            _exclusiveCreateVerifiers[Convert.ToHexString(file.Span)] = (byte[])(verifier ?? []).Clone();
+        }
+    }
+
+    private static bool AreSameAttributes(Nfs4FAttr left, Nfs4FAttr right) =>
+        left.Mask.Equals(right.Mask) && (left.Values ?? []).AsSpan().SequenceEqual(right.Values ?? []);
+
+    private static bool IsAnonymousStateId(Nfs4StateId stateId) =>
+        stateId.Sequence == 0 && (stateId.Other ?? []).AsSpan().SequenceEqual(Nfs4StateId.Anonymous.Other);
+
     private static Nfs4ResOp Failed(Nfs4Op op, Nfs4Status status) => op switch
     {
         Nfs4Op.GetFh => new Nfs4GetFhResult { Status = status },
         Nfs4Op.GetAttr => new Nfs4GetAttrResult { Status = status },
+        Nfs4Op.Verify => new Nfs4StatusResult(Nfs4Op.Verify) { Status = status },
+        Nfs4Op.NVerify => new Nfs4StatusResult(Nfs4Op.NVerify) { Status = status },
         Nfs4Op.Access => new Nfs4AccessResult { Status = status },
         Nfs4Op.SecInfo => new Nfs4SecInfoResult(Nfs4Op.SecInfo) { Status = status },
         Nfs4Op.SecInfoNoName => new Nfs4SecInfoResult(Nfs4Op.SecInfoNoName) { Status = status },
@@ -1993,6 +2103,7 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
         Nfs4Op.SetClientId => new Nfs4SetClientIdResult { Status = status },
         Nfs4Op.Open => new Nfs4OpenResult { Status = status },
         Nfs4Op.OpenConfirm => new Nfs4StateIdResult(Nfs4Op.OpenConfirm) { Status = status },
+        Nfs4Op.OpenDowngrade => new Nfs4StateIdResult(Nfs4Op.OpenDowngrade) { Status = status },
         Nfs4Op.Close => new Nfs4StateIdResult(Nfs4Op.Close) { Status = status },
         Nfs4Op.Lock => new Nfs4LockResult { Status = status },
         Nfs4Op.LockTest => new Nfs4LockTestResult { Status = status },

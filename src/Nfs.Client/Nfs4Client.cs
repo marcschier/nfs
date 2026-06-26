@@ -111,4 +111,58 @@ public sealed class Nfs4Client
 
         return handle;
     }
+
+    /// <summary>Issues OP_OPEN_DOWNGRADE for an existing open state identifier.</summary>
+    public async ValueTask<Nfs4StateIdResult> OpenDowngradeAsync(
+        Nfs4StateId stateId,
+        uint seqid,
+        uint shareAccess,
+        uint shareDeny = 0,
+        CancellationToken cancellationToken = default)
+    {
+        Nfs4CompoundResult result = await CompoundAsync(
+            "open-downgrade",
+            [
+                new Nfs4OpenDowngradeOp
+                {
+                    OpenStateId = stateId,
+                    Seqid = seqid,
+                    ShareAccess = shareAccess,
+                    ShareDeny = shareDeny,
+                },
+            ],
+            cancellationToken).ConfigureAwait(false);
+
+        return (Nfs4StateIdResult)result.Operations[0];
+    }
+
+    /// <summary>Issues OP_VERIFY against the current file handle selected by <paramref name="prefix"/>.</summary>
+    public async ValueTask<Nfs4Status> VerifyAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        Nfs4FAttr attributes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "verify",
+            [.. prefix, new Nfs4VerifyOp { Attributes = attributes }],
+            cancellationToken).ConfigureAwait(false);
+
+        return result.Status;
+    }
+
+    /// <summary>Issues OP_NVERIFY against the current file handle selected by <paramref name="prefix"/>.</summary>
+    public async ValueTask<Nfs4Status> NverifyAsync(
+        IEnumerable<Nfs4ArgOp> prefix,
+        Nfs4FAttr attributes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+        Nfs4CompoundResult result = await CompoundAsync(
+            "nverify",
+            [.. prefix, new Nfs4NverifyOp { Attributes = attributes }],
+            cancellationToken).ConfigureAwait(false);
+
+        return result.Status;
+    }
 }

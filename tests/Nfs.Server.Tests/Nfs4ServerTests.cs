@@ -523,6 +523,129 @@ public sealed class Nfs4ServerTests
     }
 
     [Fact]
+    public async Task OpenDowngrade_NarrowsShareAndRejectsNonSubset()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        NfsFileHandle backing = fileSystem.CreateFile(fileSystem.Root, "downgrade.txt", []);
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        ulong clientId = await EstablishClientAsync(nfs, "downgrade-client");
+
+        Nfs4StateId openStateId = await OpenAsync(nfs, clientId, "downgrade-owner", "downgrade.txt");
+        Nfs4CompoundResult downgrade = await nfs.CompoundAsync(
+            "open-downgrade",
+            [new Nfs4OpenDowngradeOp
+            {
+                OpenStateId = openStateId,
+                Seqid = 2,
+                ShareAccess = Nfs4ShareAccess.Read,
+            }],
+            Token);
+
+        Assert.Equal(Nfs4Status.Ok, downgrade.Status);
+        var downgraded = Assert.IsType<Nfs4StateIdResult>(downgrade.Operations[0]);
+        Assert.Equal(openStateId.Sequence + 1, downgraded.StateId.Sequence);
+        Assert.Equal(openStateId.Other, downgraded.StateId.Other);
+
+        Nfs4CompoundResult write = await nfs.CompoundAsync(
+            "write-after-downgrade",
+            [
+                new Nfs4PutFhOp { Handle = new Nfs4Handle { Data = backing.ToArray() } },
+                new Nfs4WriteOp { StateId = downgraded.StateId, Data = [1] },
+            ],
+            Token);
+        Assert.Equal(Nfs4Status.BadStateId, write.Status);
+
+        Nfs4CompoundResult invalid = await nfs.CompoundAsync(
+            "open-downgrade-invalid",
+            [new Nfs4OpenDowngradeOp
+            {
+                OpenStateId = downgraded.StateId,
+                Seqid = 3,
+                ShareAccess = Nfs4ShareAccess.Both,
+            }],
+            Token);
+
+        Assert.Equal(Nfs4Status.InvalidArgument, invalid.Status);
+    }
+
+    [Fact]
+    public async Task VerifyAndNverify_CompareCurrentAttributes()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        fileSystem.CreateFile(fileSystem.Root, "verify.txt", "hello"u8.ToArray());
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+
+        Nfs4CompoundResult attrs = await nfs.CompoundAsync(
+            "attrs-for-verify",
+            [
+                new Nfs4PutRootFhOp(),
+                new Nfs4LookupOp { Name = "verify.txt" },
+                new Nfs4GetAttrOp { Request = Nfs4Bitmap.Of(Nfs4AttributeId.Size) },
+            ],
+            Token);
+        Nfs4FAttr matching = Assert.IsType<Nfs4GetAttrResult>(attrs.Operations[2]).Attributes;
+        Nfs4FAttr mismatched = new Nfs4FileAttributes { Size = 99 }.Encode(Nfs4Bitmap.Of(Nfs4AttributeId.Size));
+
+        Nfs4CompoundResult verifyOk = await nfs.CompoundAsync(
+            "verify-ok",
+            [new Nfs4PutRootFhOp(), new Nfs4LookupOp { Name = "verify.txt" }, new Nfs4VerifyOp { Attributes = matching }],
+            Token);
+        Assert.Equal(Nfs4Status.Ok, verifyOk.Status);
+
+        Nfs4CompoundResult verifyNotSame = await nfs.CompoundAsync(
+            "verify-not-same",
+            [new Nfs4PutRootFhOp(), new Nfs4LookupOp { Name = "verify.txt" }, new Nfs4VerifyOp { Attributes = mismatched }],
+            Token);
+        Assert.Equal(Nfs4Status.NotSame, verifyNotSame.Status);
+
+        Nfs4CompoundResult nverifyOk = await nfs.CompoundAsync(
+            "nverify-ok",
+            [new Nfs4PutRootFhOp(), new Nfs4LookupOp { Name = "verify.txt" }, new Nfs4NverifyOp { Attributes = mismatched }],
+            Token);
+        Assert.Equal(Nfs4Status.Ok, nverifyOk.Status);
+
+        Nfs4CompoundResult nverifySame = await nfs.CompoundAsync(
+            "nverify-same",
+            [new Nfs4PutRootFhOp(), new Nfs4LookupOp { Name = "verify.txt" }, new Nfs4NverifyOp { Attributes = matching }],
+            Token);
+        Assert.Equal(Nfs4Status.Same, nverifySame.Status);
+    }
+
+    [Fact]
+    public async Task ExclusiveCreate_IsIdempotentForSameVerifier()
+    {
+        var fileSystem = new InMemoryFileSystem();
+        await using var server = StartServer(fileSystem);
+        Nfs4Client nfs = await ConnectAsync(server);
+        ulong clientId = await EstablishClientAsync(nfs, "exclusive-client");
+        Nfs4Handle root = await nfs.GetRootHandleAsync(Token);
+
+        byte[] verifier = [1, 2, 3, 4, 5, 6, 7, 8];
+        Nfs4CompoundResult created = await ExclusiveOpenAsync(nfs, root, clientId, "owner-1", 1, "exclusive.txt", verifier);
+
+        Assert.Equal(Nfs4Status.Ok, created.Status);
+        Nfs4Handle firstHandle = Assert.IsType<Nfs4GetFhResult>(created.Operations[2]).Handle;
+
+        Nfs4CompoundResult retry = await ExclusiveOpenAsync(nfs, root, clientId, "owner-1", 2, "exclusive.txt", verifier);
+
+        Assert.Equal(Nfs4Status.Ok, retry.Status);
+        Assert.Equal(firstHandle.Data, Assert.IsType<Nfs4GetFhResult>(retry.Operations[2]).Handle.Data);
+
+        Nfs4CompoundResult different = await ExclusiveOpenAsync(
+            nfs,
+            root,
+            clientId,
+            "owner-1",
+            3,
+            "exclusive.txt",
+            [8, 7, 6, 5, 4, 3, 2, 1]);
+
+        Assert.Equal(Nfs4Status.AlreadyExists, different.Status);
+    }
+
+    [Fact]
     public async Task Open_WithoutConfirmedClient_FailsStaleClientId()
     {
         var fileSystem = new InMemoryFileSystem();
@@ -1104,6 +1227,33 @@ public sealed class Nfs4ServerTests
                     OpenType = Nfs4OpenType.NoCreate,
                     Reclaim = true,
                 },
+            ],
+            Token);
+
+    private static async ValueTask<Nfs4CompoundResult> ExclusiveOpenAsync(
+        Nfs4Client nfs,
+        Nfs4Handle root,
+        ulong clientId,
+        string owner,
+        uint seqid,
+        string name,
+        byte[] verifier) =>
+        await nfs.CompoundAsync(
+            "exclusive-open",
+            [
+                new Nfs4PutFhOp { Handle = root },
+                new Nfs4OpenOp
+                {
+                    Seqid = seqid,
+                    ShareAccess = Nfs4ShareAccess.Both,
+                    ClientId = clientId,
+                    Owner = Encoding.UTF8.GetBytes(owner),
+                    OpenType = Nfs4OpenType.Create,
+                    CreateMode = Nfs4CreateMode.Exclusive,
+                    CreateVerifier = verifier,
+                    Name = name,
+                },
+                new Nfs4GetFhOp(),
             ],
             Token);
 
