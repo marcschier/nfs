@@ -1,0 +1,39 @@
+name: RPCSEC_GSS Kerberos
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gss-kerberos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kerberos:
+    name: MIT Kerberos KDC integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install MIT Kerberos and GSSAPI
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y krb5-kdc krb5-admin-server krb5-user libkrb5-dev
+          test -e /usr/lib/x86_64-linux-gnu/libgssapi_krb5.so || ldconfig -p | grep libgssapi_krb5
+      - name: Provision local KDC
+        run: bash eng/interop/krb5-setup.sh
+      - name: Restore
+        run: dotnet restore Nfs.slnx
+      - name: Build
+        run: dotnet build Nfs.slnx -c Release --no-restore
+      - name: Run gated Kerberos RPCSEC_GSS tests
+        run: dotnet test tests/Nfs.Rpc.Tests/Nfs.Rpc.Tests.csproj -c Release --no-build --filter FullyQualifiedName~RpcSecGssKerberosTests

@@ -215,7 +215,10 @@ public sealed class RpcServer : IAsyncDisposable
                 credential = RpcSecGssWire.DecodeCredential(header.Credential);
                 if (credential.Procedure is RpcSecGssProcedure.Init or RpcSecGssProcedure.ContinueInit)
                 {
-                    RpcSecGssServerResult initResult = _rpcSecGss.ProcessInit(arguments);
+                    RpcSecGssServerResult initResult = _rpcSecGss.ProcessInit(
+                        credential.Procedure,
+                        credential.Handle,
+                        arguments);
                     return RpcMessageCodec.EncodeReply(
                         header.Xid, RpcReplyPayload.Success(initResult.Payload), OpaqueAuth.None);
                 }

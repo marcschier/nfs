@@ -23,19 +23,36 @@ public sealed class RpcSecGssServer
     /// <summary>Gets the sequence window reported to clients during context establishment.</summary>
     public uint SequenceWindow { get; }
 
-    internal RpcSecGssServerResult ProcessInit(ReadOnlyMemory<byte> arguments)
+    internal RpcSecGssServerResult ProcessInit(
+        RpcSecGssProcedure procedure,
+        ReadOnlyMemory<byte> handle,
+        ReadOnlyMemory<byte> arguments)
     {
         byte[] inputToken = RpcSecGssWire.DecodeInitArgument(arguments);
-        IGssContext context = _mechanism.CreateServerContext();
-        GssTokenResult step = context.Accept(inputToken);
-        byte[] handle = CreateHandle();
-        if (context.IsEstablished)
+        byte[] resultHandle;
+        IGssContext context;
+        if (procedure == RpcSecGssProcedure.Init)
         {
-            _contexts[HandleKey(handle)] = context;
+            context = _mechanism.CreateServerContext();
+            resultHandle = CreateHandle();
+        }
+        else
+        {
+            resultHandle = handle.ToArray();
+            if (!_contexts.TryGetValue(HandleKey(resultHandle), out context!))
+            {
+                throw new RpcException("RPCSEC_GSS context handle was not found.");
+            }
+        }
+
+        GssTokenResult step = context.Accept(inputToken);
+        if (context.IsEstablished || step.MajorStatus == GssMajorStatus.ContinueNeeded)
+        {
+            _contexts[HandleKey(resultHandle)] = context;
         }
 
         byte[] result = RpcSecGssWire.EncodeInitResult(
-            handle, step.MajorStatus, step.MinorStatus, SequenceWindow, step.OutputToken.Span);
+            resultHandle, step.MajorStatus, step.MinorStatus, SequenceWindow, step.OutputToken.Span);
         return RpcSecGssServerResult.Handshake(result);
     }
 
@@ -48,6 +65,11 @@ public sealed class RpcSecGssServer
         if (!_contexts.TryGetValue(HandleKey(handle), out IGssContext? context))
         {
             throw new RpcException("RPCSEC_GSS context handle was not found.");
+        }
+
+        if (!context.IsEstablished)
+        {
+            throw new RpcException("RPCSEC_GSS context is not established.");
         }
 
         byte[] headerPrefix = RpcMessageCodec.EncodeCallHeaderPrefix(header);
