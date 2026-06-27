@@ -8,8 +8,6 @@ A modern, idiomatic **.NET NFS client and server** library, multi-targeting **ne
 
 The whole stack is **NativeAOT-compatible** — there is no runtime-reflection-based serialization. XDR codecs are produced by a Roslyn source generator.
 
-> The library is implemented from scratch. The previous (legacy) NekoDrive code has been removed; its protocol `.x` definitions are preserved under [`docs/reference/xdr`](docs/reference/xdr) as compliance references.
-
 ## 📦 Installation
 
 The whole stack ships as a single package on nuget.org:
