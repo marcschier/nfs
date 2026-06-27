@@ -15,6 +15,11 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
   </ItemGroup>
 
+  <!-- System.IO.Pipelines is in-box for net9.0+ but ships as a package on net8.0. -->
+  <ItemGroup Label="Framework shims (net8.0 only)">
+    <PackageVersion Include="System.IO.Pipelines" Version="8.0.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Testing">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />

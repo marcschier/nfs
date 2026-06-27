@@ -28,7 +28,7 @@ NFS v2 and v3 are stateless on the server and their handlers live entirely in th
 
 ## Build, style, and AOT
 
-- Target framework: `net10.0` only; every shipping library sets `IsAotCompatible` (via `src/Directory.Build.props`) and is reflection-free, and NativeAOT compatibility is verified by a CI job that publishes a sample with `PublishAot` and fails on any IL/trim warning.
+- Target frameworks: the shipping libraries multi-target `net8.0`, `net9.0`, and `net10.0` (the same source compiles on all three — no per-framework fallbacks, so the net10.0 output is unchanged); samples and the NativeAOT smoke stay `net10.0`. Every shipping library sets `IsAotCompatible` (via `src/Directory.Build.props`) and is reflection-free, and NativeAOT compatibility is verified by a CI job that publishes a sample with `PublishAot` and fails on any IL/trim warning.
 - Code style is Allman, enforced via `.editorconfig` and `dotnet format`; Roslynator analyzers are enabled repo-wide.
 - Versioning is handled by Nerdbank.GitVersioning; package versions are centrally managed.
 

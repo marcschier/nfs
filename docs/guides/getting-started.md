@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- The **.NET 10 SDK** (the exact version is pinned in `global.json`).
+- The **.NET 10 SDK** (the exact version is pinned in `global.json`) — it builds every target framework. The libraries multi-target **net8.0, net9.0, and net10.0**; the **.NET 8 and .NET 9 runtimes** are needed only to *run* the net8.0/net9.0 test executables.
 - For NativeAOT publishing: a native toolchain (`clang` + `zlib` on Linux, the MSVC C++ build tools on Windows).
 
 ## Everyday commands

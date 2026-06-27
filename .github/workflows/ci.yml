@@ -28,6 +28,11 @@ jobs:
           fetch-depth: 0 # Nerdbank.GitVersioning needs the full history.
       - uses: actions/setup-dotnet@v4
         with:
+          # The pinned SDK (global.json) builds every TFM; the extra runtimes let the
+          # net8.0/net9.0 test executables run.
+          dotnet-version: |
+            8.0.x
+            9.0.x
           global-json-file: global.json
       - name: Restore
         run: dotnet restore Nfs.slnx

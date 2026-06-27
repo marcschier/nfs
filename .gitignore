@@ -3,6 +3,7 @@
 [Oo]bj/
 [Oo]ut/
 artifacts/
+BenchmarkDotNet.Artifacts/
 
 # Visual Studio / Rider / VS Code
 .vs/

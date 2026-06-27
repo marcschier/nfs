@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Roslyn analyzers/generators must target netstandard2.0 to load in the compiler host. -->
+    <!-- Roslyn analyzers/generators must target netstandard2.0 to load in the compiler host.
+         Clear the multi-target set inherited from src/Directory.Build.props. -->
+    <TargetFrameworks></TargetFrameworks>
     <TargetFramework>netstandard2.0</TargetFramework>
     <IsAotCompatible>false</IsAotCompatible>
     <IsPackable>false</IsPackable>

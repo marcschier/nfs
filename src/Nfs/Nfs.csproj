@@ -30,6 +30,13 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
+  <!-- net8.0 is the only TFM where System.IO.Pipelines is not part of the shared framework, so the
+       bundled net8.0 assemblies need it as a real (Microsoft first-party) package dependency. On
+       net9.0/net10.0 it is in-box, so those dependency groups stay empty. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="System.IO.Pipelines" />
+  </ItemGroup>
+
   <!-- Bundle the referenced Nfs.* assemblies (and their docs/symbols) into lib/ so the single
        package carries the whole stack with no external or inter-package dependencies.
        DependsOnTargets="ResolveReferences" ensures ReferenceCopyLocalPaths is populated. -->

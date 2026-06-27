@@ -4,7 +4,7 @@
 [![NuGet Nfs](https://img.shields.io/nuget/v/Nfs?label=NuGet%20Nfs)](https://www.nuget.org/packages/Nfs)
 [![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-Nfs.*-2188ff?logo=github)](https://github.com/marcschier/nfs/packages)
 
-A modern, idiomatic .NET 10 **NFS client and server** library. It implements the ONC/RPC + XDR stack and the NFS protocols (v2, v3, and v4.0/4.1/4.2) from the ground up, with an emphasis on **protocol compliance and interoperability** with existing real-world implementations (the Linux kernel client and server, NFS-Ganesha, and the Windows NFS client). Performance is a close second, built on `Span<T>`, `BinaryPrimitives`, ref structs, and `System.IO.Pipelines`.
+A modern, idiomatic **.NET NFS client and server** library, multi-targeting **net8.0, net9.0, and net10.0**. It implements the ONC/RPC + XDR stack and the NFS protocols (v2, v3, and v4.0/4.1/4.2) from the ground up, with an emphasis on **protocol compliance and interoperability** with existing real-world implementations (the Linux kernel client and server, NFS-Ganesha, and the Windows NFS client). Performance is a close second, built on `Span<T>`, `BinaryPrimitives`, ref structs, and `System.IO.Pipelines`.
 
 The whole stack is **NativeAOT-compatible** — there is no runtime-reflection-based serialization. XDR codecs are produced by a Roslyn source generator.
 
@@ -41,7 +41,7 @@ Developer documentation lives in [`docs/`](docs/README.md):
 
 ## 🛠️ Building
 
-Requires the **.NET 10 SDK** (pinned in `global.json`).
+Building requires the **.NET 10 SDK** (pinned in `global.json`); it produces all target frameworks. The shipping libraries multi-target **net8.0, net9.0, and net10.0** — running the net8.0/net9.0 test executables additionally needs those runtimes installed.
 
 ```sh
 dotnet build Nfs.slnx -c Release
