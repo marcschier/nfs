@@ -134,7 +134,13 @@ public sealed class RpcServer : IAsyncDisposable
             Socket connection;
             try
             {
+#if NETSTANDARD
+                // Socket.AcceptAsync(CancellationToken) is net5.0+ (absent on netstandard 2.0/2.1);
+                // shutdown disposes the listener, which unblocks the accept (handled by the catches).
+                connection = await _listener.AcceptAsync().ConfigureAwait(false);
+#else
                 connection = await _listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
+#endif
             }
             catch (OperationCanceledException)
             {

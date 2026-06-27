@@ -26,6 +26,10 @@ public readonly record struct RpcReply(RpcReplyHeader Header, ReadOnlyMemory<byt
         }
 
         var reader = new XdrReader(Result.Span);
+#if NET7_0_OR_GREATER
         return T.ReadFrom(ref reader);
+#else
+        return XdrDecoder.ReadFrom<T>(ref reader);
+#endif
     }
 }

@@ -112,8 +112,13 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
     {
         string absolute = RequireFile(file);
 
+#if NETSTANDARD2_0
+        using var stream = new FileStream(
+            absolute, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#else
         await using var stream = new FileStream(
             absolute, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#endif
 
         if (offset >= (ulong)stream.Length)
         {
@@ -142,8 +147,13 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
 
         string absolute = RequireFile(file);
 
+#if NETSTANDARD2_0
+        using var stream = new FileStream(
+            absolute, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#else
         await using var stream = new FileStream(
             absolute, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#endif
 
         if (offset >= (ulong)stream.Length)
         {
@@ -169,8 +179,13 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
     {
         string absolute = RequireFile(file);
 
+#if NETSTANDARD2_0
+        using var stream = new FileStream(
+            absolute, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#else
         await using var stream = new FileStream(
             absolute, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#endif
 
         stream.Seek((long)offset, SeekOrigin.Begin);
         await stream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
@@ -300,8 +315,13 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
                 throw new NfsException(NfsStatus.InvalidArgument);
             }
 
+#if NETSTANDARD2_0
+            using var stream = new FileStream(
+                absolute, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#else
             await using var stream = new FileStream(
                 absolute, FileMode.Open, FileAccess.Write, FileShare.ReadWrite, bufferSize: 1, useAsync: true);
+#endif
             stream.SetLength((long)size);
         }
 
@@ -390,6 +410,7 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
+#if NET6_0_OR_GREATER
         string childRelative = ResolveChild(RequireDirectory(directory), name);
         string absolute = ToAbsolute(childRelative);
         if (File.Exists(absolute) || Directory.Exists(absolute))
@@ -407,6 +428,10 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
         }
 
         return new ValueTask<NfsFileHandle>(HandleFor(childRelative));
+#else
+        // File.CreateSymbolicLink is net6.0+; symbolic links are unsupported on netstandard.
+        throw new NfsException(NfsStatus.NotSupported);
+#endif
     }
 
     /// <inheritdoc/>
@@ -415,6 +440,7 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
         CancellationToken cancellationToken = default)
     {
         string absolute = ToAbsolute(Resolve(handle).Relative);
+#if NET6_0_OR_GREATER
         var info = new FileInfo(absolute);
         if (info.LinkTarget is { } target)
         {
@@ -425,6 +451,11 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
         return directoryInfo.LinkTarget is { } directoryTarget
             ? new ValueTask<string>(directoryTarget)
             : throw new NfsException(NfsStatus.InvalidArgument);
+#else
+        // FileSystemInfo.LinkTarget is net6.0+; symbolic links are unsupported on netstandard.
+        _ = absolute;
+        throw new NfsException(NfsStatus.NotSupported);
+#endif
     }
 
     /// <inheritdoc/>
@@ -701,10 +732,16 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
     private static NfsFileAttributes AttributesFor(FileSystemInfo info, ulong id)
     {
         bool isDirectory = info is DirectoryInfo;
+#if NET6_0_OR_GREATER
         bool isSymlink = info.LinkTarget is not null;
         long size = isSymlink
             ? System.Text.Encoding.UTF8.GetByteCount(info.LinkTarget!)
             : isDirectory ? 4096 : ((FileInfo)info).Length;
+#else
+        // FileSystemInfo.LinkTarget is net6.0+; symbolic links are not detected on netstandard.
+        bool isSymlink = false;
+        long size = isDirectory ? 4096 : ((FileInfo)info).Length;
+#endif
         NfsFileType type = isSymlink
             ? NfsFileType.SymbolicLink
             : isDirectory ? NfsFileType.Directory : NfsFileType.Regular;
@@ -721,4 +758,25 @@ public sealed class LocalDiskFileSystem : INfsFileSystem
             ChangeTime = NfsTimestamp.FromDateTimeOffset(info.LastWriteTimeUtc),
         };
     }
+
+#if NETSTANDARD2_0
+    // On .NET Standard 2.0 the INfsFileSystem optional operations are abstract (no default
+    // interface implementations), so the unsupported-operation defaults are provided explicitly.
+
+    /// <inheritdoc/>
+    public ValueTask<NfsFileHandle> MakeSpecialNodeAsync(
+        NfsFileHandle directory,
+        string name,
+        NfsFileType type,
+        CancellationToken cancellationToken = default) =>
+        throw new NfsException(NfsStatus.NotSupported);
+
+    /// <inheritdoc/>
+    public ValueTask CreateHardLinkAsync(
+        NfsFileHandle target,
+        NfsFileHandle directory,
+        string name,
+        CancellationToken cancellationToken = default) =>
+        throw new NfsException(NfsStatus.NotSupported);
+#endif
 }

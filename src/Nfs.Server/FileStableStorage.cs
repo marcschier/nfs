@@ -31,6 +31,10 @@ public sealed class FileStableStorage : IStableStorage
         try
         {
             byte[] record = Encode(owner);
+#if NETSTANDARD
+            using (var stream = new FileStream(
+                tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 4096, FileOptions.WriteThrough))
+#else
             using (var stream = new FileStream(
                 tempPath,
                 new FileStreamOptions
@@ -41,6 +45,7 @@ public sealed class FileStableStorage : IStableStorage
                     Options = FileOptions.WriteThrough,
                     BufferSize = 4096,
                 }))
+#endif
             {
                 stream.Write(record);
                 stream.Flush(flushToDisk: true);
@@ -79,7 +84,7 @@ public sealed class FileStableStorage : IStableStorage
         cancellationToken.ThrowIfCancellationRequested();
         if (!Directory.Exists(_directory))
         {
-            return ValueTask.FromResult<IReadOnlyList<ReadOnlyMemory<byte>>>([]);
+            return new ValueTask<IReadOnlyList<ReadOnlyMemory<byte>>>([]);
         }
 
         var clients = new List<ReadOnlyMemory<byte>>();
@@ -93,7 +98,7 @@ public sealed class FileStableStorage : IStableStorage
             }
         }
 
-        return ValueTask.FromResult<IReadOnlyList<ReadOnlyMemory<byte>>>(clients);
+        return new ValueTask<IReadOnlyList<ReadOnlyMemory<byte>>>(clients);
     }
 
     private string PathFor(ReadOnlySpan<byte> clientOwner) =>

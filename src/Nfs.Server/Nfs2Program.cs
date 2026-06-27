@@ -448,7 +448,11 @@ public sealed class Nfs2Program : IRpcProgram
         where T : IXdrSerializable<T>
     {
         var reader = new XdrReader(arguments.Span);
+#if NET7_0_OR_GREATER
         return T.ReadFrom(ref reader);
+#else
+        return XdrDecoder.ReadFrom<T>(ref reader);
+#endif
     }
 
     private static Nfs2WriteRequest DecodeWrite(ReadOnlyMemory<byte> arguments)

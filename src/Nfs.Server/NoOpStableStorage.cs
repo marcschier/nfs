@@ -29,6 +29,6 @@ public sealed class NoOpStableStorage : IStableStorage
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult<IReadOnlyList<ReadOnlyMemory<byte>>>([]);
+        return new ValueTask<IReadOnlyList<ReadOnlyMemory<byte>>>([]);
     }
 }

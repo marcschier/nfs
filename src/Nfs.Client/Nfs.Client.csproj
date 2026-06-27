@@ -14,4 +14,9 @@
     <ProjectReference Include="..\Nfs.Nsm\Nfs.Nsm.csproj" />
   </ItemGroup>
 
+  <!-- netstandard2.0 lacks System.Buffers.ArrayBufferWriter<T>. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <Compile Include="..\Polyfills\ArrayBufferWriter.cs" Link="Polyfills\ArrayBufferWriter.cs" />
+  </ItemGroup>
+
 </Project>

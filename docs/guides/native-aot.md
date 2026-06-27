@@ -1,6 +1,8 @@
 # NativeAOT
 
-The whole stack is NativeAOT-compatible. There is no runtime-reflection-based serialization, no `MakeGenericMethod`, no `Activator.CreateInstance` on protocol types, and no dynamic code generation. Every XDR codec is either hand-written or emitted at compile time by the source generator as ordinary static code, so the trimmer and the AOT compiler can see and keep exactly what is used.
+The **net8.0, net9.0, and net10.0** builds of the whole stack are NativeAOT-compatible. There is no runtime-reflection-based serialization, no `MakeGenericMethod`, no `Activator.CreateInstance` on protocol types, and no dynamic code generation. Every XDR codec is either hand-written or emitted at compile time by the source generator as ordinary static code, so the trimmer and the AOT compiler can see and keep exactly what is used.
+
+> **netstandard2.0/2.1 are not AOT targets.** .NET Standard lacks static-virtual interface members, so on those targets the generic codec factory falls back to a cached reflection→delegate binding (`XdrDecoder`), and the source-generated P/Invoke (`LibraryImport`) is replaced with classic `DllImport`. These builds exist for compatibility (.NET Framework, Mono, Unity) and rely on source-only polyfills; they are not reflection-free. The modern (net8.0+) builds are unaffected and remain the AOT path.
 
 ## Publishing
 

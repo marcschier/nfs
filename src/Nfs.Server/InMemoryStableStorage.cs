@@ -45,7 +45,7 @@ public sealed class InMemoryStableStorage : IStableStorage
                 clients[index++] = owner.ToArray();
             }
 
-            return ValueTask.FromResult<IReadOnlyList<ReadOnlyMemory<byte>>>(clients);
+            return new ValueTask<IReadOnlyList<ReadOnlyMemory<byte>>>(clients);
         }
     }
 }

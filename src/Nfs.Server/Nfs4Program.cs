@@ -2056,7 +2056,16 @@ public sealed class Nfs4Program : IRpcProgram, IRpcSecurityAware, IRpcLocalEndPo
 
     private Nfs4StateId NewOffloadStateId()
     {
+#if NETSTANDARD
+        // Interlocked.Increment(ref ulong) is net5.0+; serialize via the existing offload gate.
+        ulong id;
+        lock (_offloadGate)
+        {
+            id = ++_nextOffloadId;
+        }
+#else
         ulong id = Interlocked.Increment(ref _nextOffloadId);
+#endif
         byte[] other = new byte[Nfs4.OtherSize];
         BinaryPrimitives.WriteUInt32BigEndian(other.AsSpan(0, 4), OffloadStateIdMagic);
         BinaryPrimitives.WriteUInt64BigEndian(other.AsSpan(4, 8), id);

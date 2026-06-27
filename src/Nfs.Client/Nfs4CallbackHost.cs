@@ -51,7 +51,7 @@ public sealed class Nfs4CallbackHost : IAsyncDisposable
         {
             if (_recalls.TryDequeue(out Nfs4CallbackRecallOp? recall))
             {
-                return ValueTask.FromResult(recall);
+                return new ValueTask<Nfs4CallbackRecallOp>(recall);
             }
 
             var waiter = new TaskCompletionSource<Nfs4CallbackRecallOp>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -74,7 +74,7 @@ public sealed class Nfs4CallbackHost : IAsyncDisposable
         {
             if (_offloads.TryDequeue(out Nfs4CallbackOffloadOp? offload))
             {
-                return ValueTask.FromResult(offload);
+                return new ValueTask<Nfs4CallbackOffloadOp>(offload);
             }
 
             var waiter = new TaskCompletionSource<Nfs4CallbackOffloadOp>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -97,7 +97,7 @@ public sealed class Nfs4CallbackHost : IAsyncDisposable
         {
             if (_lockNotifications.TryDequeue(out Nfs4CallbackNotifyLockOp? notifyLock))
             {
-                return ValueTask.FromResult(notifyLock);
+                return new ValueTask<Nfs4CallbackNotifyLockOp>(notifyLock);
             }
 
             var waiter = new TaskCompletionSource<Nfs4CallbackNotifyLockOp>(

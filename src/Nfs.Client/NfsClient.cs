@@ -112,7 +112,7 @@ public sealed class NfsClient : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(endPoint);
         ArgumentNullException.ThrowIfNull(exportPath);
 
-        IReadOnlySet<uint> supported = await ProbeVersionsAsync(endPoint, cancellationToken).ConfigureAwait(false);
+        var supported = await ProbeVersionsAsync(endPoint, cancellationToken).ConfigureAwait(false);
         NfsVersion version = SelectVersion(supported, preferred);
         return version == NfsVersion.V4
             ? await ConnectV4Async(endPoint, exportPath, cancellationToken).ConfigureAwait(false)
@@ -126,7 +126,11 @@ public sealed class NfsClient : IAsyncDisposable
     /// <param name="endPoint">The server endpoint (serving program 100003).</param>
     /// <param name="cancellationToken">A token to cancel the probe.</param>
     /// <returns>The set of supported NFS major versions (a subset of {2, 3, 4}).</returns>
+#if NETSTANDARD
+    public static async ValueTask<ISet<uint>> ProbeVersionsAsync(
+#else
     public static async ValueTask<IReadOnlySet<uint>> ProbeVersionsAsync(
+#endif
         EndPoint endPoint,
         CancellationToken cancellationToken = default)
     {
@@ -194,7 +198,11 @@ public sealed class NfsClient : IAsyncDisposable
         return handle;
     }
 
+#if NETSTANDARD
+    private static NfsVersion SelectVersion(ISet<uint> supported, NfsVersion? preferred)
+#else
     private static NfsVersion SelectVersion(IReadOnlySet<uint> supported, NfsVersion? preferred)
+#endif
     {
         if (preferred is { } pinned)
         {
@@ -222,7 +230,11 @@ public sealed class NfsClient : IAsyncDisposable
             $"The server does not support any mutually supported high-level NFS version. Supported versions: {Describe(supported)}.");
     }
 
+#if NETSTANDARD
+    private static string Describe(ISet<uint> supported) =>
+#else
     private static string Describe(IReadOnlySet<uint> supported) =>
+#endif
         supported.Count == 0 ? "none" : string.Join(", ", supported.OrderBy(version => version));
 
     /// <summary>Gets the attributes of the object at <paramref name="path"/>.</summary>
@@ -691,7 +703,15 @@ public sealed class NfsClient : IAsyncDisposable
 
         Nfs4CompoundResult set = await Protocol4.CompoundAsync(
             "setclientid",
-            [new Nfs4SetClientIdOp { Verifier = BitConverter.GetBytes(Environment.TickCount64), Id = Guid.NewGuid().ToByteArray() }],
+            [new Nfs4SetClientIdOp
+            {
+#if NETSTANDARD
+                Verifier = BitConverter.GetBytes((long)Environment.TickCount),
+#else
+                Verifier = BitConverter.GetBytes(Environment.TickCount64),
+#endif
+                Id = Guid.NewGuid().ToByteArray(),
+            }],
             cancellationToken).ConfigureAwait(false);
         Throw.IfFailed(set.Status);
         var setClientId = (Nfs4SetClientIdResult)set.Operations[0];
@@ -721,7 +741,15 @@ public sealed class NfsClient : IAsyncDisposable
     private static string[] SplitPath(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
+#if NETSTANDARD
+#pragma warning disable CA1861 // netstandard-only split path; the separator array is trivial.
+        return path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(static segment => segment.Trim())
+            .ToArray();
+#pragma warning restore CA1861
+#else
         return path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+#endif
     }
 
     private static NfsFileAttributes ToAttributes(Nfs3FileAttributes wire) => new()

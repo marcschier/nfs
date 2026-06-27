@@ -48,7 +48,16 @@ public readonly struct NfsFileHandle : IEquatable<NfsFileHandle>
     public override int GetHashCode()
     {
         var hash = default(HashCode);
+#if NET6_0_OR_GREATER
         hash.AddBytes(Span);
+#else
+        // HashCode.AddBytes is net6.0+; on netstandard, fold the bytes in individually.
+        ReadOnlySpan<byte> span = Span;
+        for (int i = 0; i < span.Length; i++)
+        {
+            hash.Add(span[i]);
+        }
+#endif
         return hash.ToHashCode();
     }
 

@@ -852,6 +852,7 @@ internal static partial class LinuxGssApiNative
     }
 #pragma warning restore CA1051
 
+#if NET7_0_OR_GREATER
     [LibraryImport("libgssapi_krb5", EntryPoint = "gss_import_name")]
     internal static partial uint GssImportName(
         ref uint minorStatus,
@@ -949,6 +950,107 @@ internal static partial class LinuxGssApiNative
         ref uint minorStatus,
         ref IntPtr context,
         out GssBufferDesc outputToken);
+#else
+    // .NET Standard has no LibraryImport source generator. These signatures are fully blittable,
+    // so classic DllImport marshalling is byte-for-byte equivalent.
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_import_name")]
+    internal static extern uint GssImportName(
+        ref uint minorStatus,
+        ref GssBufferDesc inputNameBuffer,
+        ref GssOidDesc inputNameType,
+        out IntPtr outputName);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_acquire_cred")]
+    internal static extern uint GssAcquireCred(
+        ref uint minorStatus,
+        IntPtr desiredName,
+        uint timeReq,
+        IntPtr desiredMechanisms,
+        int credentialUsage,
+        out IntPtr outputCredential,
+        out IntPtr actualMechanisms,
+        out uint timeRec);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_init_sec_context")]
+    internal static extern uint GssInitSecContext(
+        ref uint minorStatus,
+        IntPtr claimantCredential,
+        ref IntPtr context,
+        IntPtr targetName,
+        IntPtr mechanismType,
+        uint reqFlags,
+        uint timeReq,
+        IntPtr inputChannelBindings,
+        ref GssBufferDesc inputToken,
+        out IntPtr actualMechanismType,
+        out GssBufferDesc outputToken,
+        out uint returnFlags,
+        out uint timeRec);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_accept_sec_context")]
+    internal static extern uint GssAcceptSecContext(
+        ref uint minorStatus,
+        ref IntPtr context,
+        IntPtr acceptorCredential,
+        ref GssBufferDesc inputToken,
+        IntPtr inputChannelBindings,
+        out IntPtr sourceName,
+        out IntPtr mechanismType,
+        out GssBufferDesc outputToken,
+        out uint returnFlags,
+        out uint timeRec,
+        out IntPtr delegatedCredential);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_get_mic")]
+    internal static extern uint GssGetMic(
+        ref uint minorStatus,
+        IntPtr context,
+        uint qopRequest,
+        ref GssBufferDesc messageBuffer,
+        out GssBufferDesc messageToken);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_verify_mic")]
+    internal static extern uint GssVerifyMic(
+        ref uint minorStatus,
+        IntPtr context,
+        ref GssBufferDesc messageBuffer,
+        ref GssBufferDesc tokenBuffer,
+        out uint qopState);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_wrap")]
+    internal static extern uint GssWrap(
+        ref uint minorStatus,
+        IntPtr context,
+        int confidentialityRequested,
+        uint qopRequest,
+        ref GssBufferDesc inputMessageBuffer,
+        out int confidentialityState,
+        out GssBufferDesc outputMessageBuffer);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_unwrap")]
+    internal static extern uint GssUnwrap(
+        ref uint minorStatus,
+        IntPtr context,
+        ref GssBufferDesc inputMessageBuffer,
+        out GssBufferDesc outputMessageBuffer,
+        out int confidentialityState,
+        out uint qopState);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_release_buffer")]
+    internal static extern uint GssReleaseBuffer(ref uint minorStatus, ref GssBufferDesc buffer);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_release_name")]
+    internal static extern uint GssReleaseName(ref uint minorStatus, ref IntPtr name);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_release_cred")]
+    internal static extern uint GssReleaseCred(ref uint minorStatus, ref IntPtr credential);
+
+    [DllImport("libgssapi_krb5", EntryPoint = "gss_delete_sec_context")]
+    internal static extern uint GssDeleteSecContext(
+        ref uint minorStatus,
+        ref IntPtr context,
+        out GssBufferDesc outputToken);
+#endif
 }
 
 internal static partial class WindowsSspiNative
@@ -995,6 +1097,7 @@ internal static partial class WindowsSspiNative
     }
 #pragma warning restore CA1051
 
+#if NET7_0_OR_GREATER
     [LibraryImport("secur32.dll", EntryPoint = "AcquireCredentialsHandleW", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial int AcquireCredentialsHandle(
         string? principal,
@@ -1076,4 +1179,89 @@ internal static partial class WindowsSspiNative
 
     [LibraryImport("secur32.dll", EntryPoint = "FreeContextBuffer", SetLastError = true)]
     internal static partial int FreeContextBuffer(IntPtr contextBuffer);
+#else
+    // .NET Standard fallback: classic DllImport. CharSet.Unicode mirrors StringMarshalling.Utf16
+    // (the *W entry points take UTF-16); the remaining signatures are blittable.
+    [DllImport("secur32.dll", EntryPoint = "AcquireCredentialsHandleW", CharSet = CharSet.Unicode)]
+    internal static extern int AcquireCredentialsHandle(
+        string? principal,
+        string package,
+        uint credentialUse,
+        IntPtr logonId,
+        IntPtr authData,
+        IntPtr getKeyFunction,
+        IntPtr getKeyArgument,
+        out SecHandle credential,
+        out long expiry);
+
+    [DllImport("secur32.dll", EntryPoint = "InitializeSecurityContextW", CharSet = CharSet.Unicode)]
+    internal static extern unsafe int InitializeSecurityContext(
+        ref SecHandle credential,
+        SecHandle* context,
+        string targetName,
+        uint contextRequest,
+        uint reserved1,
+        uint targetDataRep,
+        SecBufferDesc* input,
+        uint reserved2,
+        out SecHandle newContext,
+        SecBufferDesc* output,
+        out uint contextAttributes,
+        out long expiry);
+
+    [DllImport("secur32.dll", EntryPoint = "AcceptSecurityContext")]
+    internal static extern unsafe int AcceptSecurityContext(
+        ref SecHandle credential,
+        SecHandle* context,
+        ref SecBufferDesc input,
+        uint contextRequest,
+        uint targetDataRep,
+        out SecHandle newContext,
+        SecBufferDesc* output,
+        out uint contextAttributes,
+        out long expiry);
+
+    [DllImport("secur32.dll", EntryPoint = "QueryContextAttributesW")]
+    internal static extern int QueryContextAttributes(
+        ref SecHandle context,
+        uint attribute,
+        out SecPkgContextSizes sizes);
+
+    [DllImport("secur32.dll", EntryPoint = "MakeSignature")]
+    internal static extern int MakeSignature(
+        ref SecHandle context,
+        uint qop,
+        ref SecBufferDesc message,
+        uint sequenceNumber);
+
+    [DllImport("secur32.dll", EntryPoint = "VerifySignature")]
+    internal static extern int VerifySignature(
+        ref SecHandle context,
+        ref SecBufferDesc message,
+        uint sequenceNumber,
+        out uint qop);
+
+    [DllImport("secur32.dll", EntryPoint = "EncryptMessage")]
+    internal static extern int EncryptMessage(
+        ref SecHandle context,
+        uint qop,
+        ref SecBufferDesc message,
+        uint sequenceNumber);
+
+    [DllImport("secur32.dll", EntryPoint = "DecryptMessage")]
+    internal static extern int DecryptMessage(
+        ref SecHandle context,
+        ref SecBufferDesc message,
+        uint sequenceNumber,
+        out uint qop);
+
+    [DllImport("secur32.dll", EntryPoint = "DeleteSecurityContext")]
+    internal static extern int DeleteSecurityContext(ref SecHandle context);
+
+    [DllImport("secur32.dll", EntryPoint = "FreeCredentialsHandle")]
+    internal static extern int FreeCredentialsHandle(ref SecHandle credential);
+
+    [DllImport("secur32.dll", EntryPoint = "FreeContextBuffer", SetLastError = true)]
+    internal static extern int FreeContextBuffer(IntPtr contextBuffer);
+#endif
 }

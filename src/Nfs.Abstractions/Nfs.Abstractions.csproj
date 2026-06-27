@@ -4,4 +4,9 @@
     <Description>Cross-cutting NFS contracts (status codes, file handles, attributes) shared by the client, server, and protocol layers.</Description>
   </PropertyGroup>
 
+  <!-- System.HashCode is in-box on netstandard2.1+/net8.0+; netstandard2.0 needs the backport. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="Microsoft.Bcl.HashCode" />
+  </ItemGroup>
+
 </Project>

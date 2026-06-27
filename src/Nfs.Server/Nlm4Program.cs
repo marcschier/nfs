@@ -337,7 +337,8 @@ public sealed class Nlm4Program : IRpcProgram
             return false;
         }
 
-        int colon = callerName.LastIndexOf(':');
+        // string.IsNullOrWhiteSpace lacks the [NotNullWhen(false)] annotation on netstandard.
+        int colon = callerName!.LastIndexOf(':');
         if (colon <= 0 ||
             colon == callerName.Length - 1 ||
             !int.TryParse(callerName[(colon + 1)..], out int port))
@@ -364,7 +365,11 @@ public sealed class Nlm4Program : IRpcProgram
         where T : IXdrSerializable<T>
     {
         var reader = new XdrReader(arguments.Span);
+#if NET7_0_OR_GREATER
         return T.ReadFrom(ref reader);
+#else
+        return XdrDecoder.ReadFrom<T>(ref reader);
+#endif
     }
 
     private static RpcReplyPayload Encode<T>(T result)

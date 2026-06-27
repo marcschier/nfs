@@ -61,6 +61,14 @@ public interface INfsFileSystem
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The byte count read and whether the end of the file was reached.</returns>
     /// <exception cref="NfsException">The handle is stale or does not name a regular file.</exception>
+#if NETSTANDARD2_0
+    ValueTask<NfsBufferedReadResult> ReadAsync(
+        NfsFileHandle file,
+        ulong offset,
+        uint count,
+        IBufferWriter<byte> destination,
+        CancellationToken cancellationToken = default);
+#else
     async ValueTask<NfsBufferedReadResult> ReadAsync(
         NfsFileHandle file,
         ulong offset,
@@ -74,6 +82,7 @@ public interface INfsFileSystem
         destination.Write(read.Data.Span);
         return new NfsBufferedReadResult((uint)read.Data.Length, read.EndOfFile);
     }
+#endif
 
     /// <summary>Writes <paramref name="data"/> to a file starting at an offset.</summary>
     /// <param name="file">The file handle.</param>
@@ -121,8 +130,13 @@ public interface INfsFileSystem
         NfsFileHandle directory,
         string name,
         NfsFileType type,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Removes a regular file from a directory.</summary>
     /// <param name="directory">The parent directory handle.</param>
@@ -162,8 +176,13 @@ public interface INfsFileSystem
     ValueTask<NfsFileAttributes> SetAttributesAsync(
         NfsFileHandle handle,
         NfsSetAttributes attributes,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Moves or renames an object between directories.</summary>
     /// <param name="sourceDirectory">The handle of the directory currently holding the object.</param>
@@ -178,8 +197,13 @@ public interface INfsFileSystem
         string sourceName,
         NfsFileHandle targetDirectory,
         string targetName,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Creates a symbolic link.</summary>
     /// <param name="directory">The parent directory handle.</param>
@@ -192,8 +216,13 @@ public interface INfsFileSystem
         NfsFileHandle directory,
         string name,
         string target,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Reads the target path of a symbolic link.</summary>
     /// <param name="handle">The link's handle.</param>
@@ -202,8 +231,13 @@ public interface INfsFileSystem
     /// <exception cref="NfsException">The handle is stale or does not name a symbolic link.</exception>
     ValueTask<string> ReadSymbolicLinkAsync(
         NfsFileHandle handle,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Creates a hard link to an existing object.</summary>
     /// <param name="target">The handle of the existing object to link to.</param>
@@ -216,8 +250,13 @@ public interface INfsFileSystem
         NfsFileHandle target,
         NfsFileHandle directory,
         string name,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
 
     /// <summary>Gets the NFSv4 ACL associated with an object.</summary>
@@ -226,8 +265,13 @@ public interface INfsFileSystem
     /// <returns>The object's ACL entries in evaluation order.</returns>
     ValueTask<IReadOnlyList<NfsAccessControlEntry>> GetAccessControlListAsync(
         NfsFileHandle handle,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         new(Array.Empty<NfsAccessControlEntry>());
+#endif
 
     /// <summary>Sets the NFSv4 ACL associated with an object.</summary>
     /// <param name="handle">The object's handle.</param>
@@ -237,15 +281,25 @@ public interface INfsFileSystem
     ValueTask SetAccessControlListAsync(
         NfsFileHandle handle,
         IReadOnlyList<NfsAccessControlEntry> entries,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Gets an extended attribute value.</summary>
     ValueTask<byte[]> GetExtendedAttributeAsync(
         NfsFileHandle handle,
         string name,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Sets an extended attribute value.</summary>
     ValueTask SetExtendedAttributeAsync(
@@ -253,23 +307,38 @@ public interface INfsFileSystem
         string name,
         ReadOnlyMemory<byte> value,
         NfsSetExtendedAttributeMode mode,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Lists extended attribute names.</summary>
     ValueTask<NfsExtendedAttributeListing> ListExtendedAttributesAsync(
         NfsFileHandle handle,
         ulong cookie,
         uint maxCount,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Removes an extended attribute value.</summary>
     ValueTask RemoveExtendedAttributeAsync(
         NfsFileHandle handle,
         string name,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         throw new NfsException(NfsStatus.NotSupported);
+#endif
 
     /// <summary>Gets dynamic information about the file system containing a handle.</summary>
     /// <param name="handle">A handle within the file system (typically the export root).</param>
@@ -278,6 +347,11 @@ public interface INfsFileSystem
     /// <exception cref="NfsException">The handle is stale.</exception>
     ValueTask<NfsFileSystemStats> GetFileSystemStatsAsync(
         NfsFileHandle handle,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+#if NETSTANDARD2_0
+        ;
+#else
+        =>
         new(default(NfsFileSystemStats));
+#endif
 }

@@ -11,10 +11,15 @@
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
-  <!-- System.IO.Pipelines is part of the shared framework on net9.0+; on net8.0 it
+  <!-- System.IO.Pipelines is part of the shared framework on net9.0+; on net8.0 and netstandard it
        must be referenced as a package. net9.0/net10.0 use the in-box assembly. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0' Or $(TargetFramework.StartsWith('netstandard'))">
     <PackageReference Include="System.IO.Pipelines" />
+  </ItemGroup>
+
+  <!-- netstandard2.0 lacks System.Buffers.ArrayBufferWriter<T>. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <Compile Include="..\Polyfills\ArrayBufferWriter.cs" Link="Polyfills\ArrayBufferWriter.cs" />
   </ItemGroup>
 
 </Project>

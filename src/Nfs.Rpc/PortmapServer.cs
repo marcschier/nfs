@@ -97,7 +97,11 @@ public sealed class PortmapServer : IRpcProgram
         where T : IXdrSerializable<T>
     {
         var reader = new XdrReader(arguments.Span);
+#if NET7_0_OR_GREATER
         return T.ReadFrom(ref reader);
+#else
+        return XdrDecoder.ReadFrom<T>(ref reader);
+#endif
     }
 
     private static RpcReplyPayload Encode<T>(T result)

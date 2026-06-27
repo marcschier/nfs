@@ -30,11 +30,18 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
-  <!-- net8.0 is the only TFM where System.IO.Pipelines is not part of the shared framework, so the
-       bundled net8.0 assemblies need it as a real (Microsoft first-party) package dependency. On
-       net9.0/net10.0 it is in-box, so those dependency groups stay empty. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+  <!-- The umbrella bundles every Nfs.* assembly, so it must carry their netstandard polyfill
+       dependencies. System.Memory / System.Threading.Tasks.Extensions / Microsoft.Bcl.AsyncInterfaces
+       (netstandard2.0) are inherited from src/Directory.Build.props; the per-project ones below are
+       declared here. On net9.0/net10.0 everything is in-box, so those dependency groups stay empty. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0' Or $(TargetFramework.StartsWith('netstandard'))">
     <PackageReference Include="System.IO.Pipelines" />
+  </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.StartsWith('netstandard'))">
+    <PackageReference Include="Microsoft.Bcl.TimeProvider" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="Microsoft.Bcl.HashCode" />
   </ItemGroup>
 
   <!-- Bundle the referenced Nfs.* assemblies (and their docs/symbols) into lib/ so the single

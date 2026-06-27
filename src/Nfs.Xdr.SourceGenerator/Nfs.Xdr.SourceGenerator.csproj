@@ -6,6 +6,8 @@
     <TargetFrameworks></TargetFrameworks>
     <TargetFramework>netstandard2.0</TargetFramework>
     <IsAotCompatible>false</IsAotCompatible>
+    <!-- This is a Roslyn analyzer, not a shipping library: opt out of the netstandard polyfills. -->
+    <NetstandardPolyfills>false</NetstandardPolyfills>
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <IncludeBuildOutput>false</IncludeBuildOutput>

@@ -81,7 +81,11 @@ public sealed class RpcUdpClient : IRpcClient
 
             for (int attempt = 0; attempt <= _maxRetries; attempt++)
             {
+#if NETSTANDARD2_0
+                await _socket.SendAsync(new ArraySegment<byte>(message), SocketFlags.None).ConfigureAwait(false);
+#else
                 await _socket.SendAsync(message, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+#endif
 
                 byte[]? reply = await ReceiveMatchingAsync(buffer, xid, timeout, cancellationToken)
                     .ConfigureAwait(false);
@@ -129,7 +133,11 @@ public sealed class RpcUdpClient : IRpcClient
             int received;
             try
             {
+#if NETSTANDARD2_0
+                received = await ReceiveDatagramAsync(buffer, attempt.Token).ConfigureAwait(false);
+#else
                 received = await _socket.ReceiveAsync(buffer, SocketFlags.None, attempt.Token).ConfigureAwait(false);
+#endif
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -144,4 +152,30 @@ public sealed class RpcUdpClient : IRpcClient
             // A stale reply from an earlier retransmission: ignore it and keep waiting.
         }
     }
+
+#if NETSTANDARD2_0
+    // .NET Standard Socket has no per-operation cancellation. Receive on the thread pool with a
+    // short socket-level timeout slice so the (timeout/outer) token is observed promptly, without
+    // ever closing the socket (retransmission reuses it) or dropping a pending datagram. Calls are
+    // serialized by the caller's gate, so mutating ReceiveTimeout here is safe.
+    private async Task<int> ReceiveDatagramAsync(byte[] buffer, CancellationToken token) =>
+        await Task.Run(
+            () =>
+            {
+                while (true)
+                {
+                    token.ThrowIfCancellationRequested();
+                    _socket.ReceiveTimeout = 250;
+                    try
+                    {
+                        return _socket.Receive(buffer, 0, buffer.Length, SocketFlags.None);
+                    }
+                    catch (SocketException ex) when (ex.SocketErrorCode == SocketError.TimedOut)
+                    {
+                        // No datagram within the slice; re-check the token and keep waiting.
+                    }
+                }
+            },
+            token).ConfigureAwait(false);
+#endif
 }

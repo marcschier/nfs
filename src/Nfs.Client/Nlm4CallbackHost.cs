@@ -42,7 +42,7 @@ public sealed class Nlm4CallbackHost : IAsyncDisposable
         {
             if (_grants.TryDequeue(out Nlm4Lock grant))
             {
-                return ValueTask.FromResult(grant);
+                return new ValueTask<Nlm4Lock>(grant);
             }
 
             var waiter = new TaskCompletionSource<Nlm4Lock>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -108,7 +108,11 @@ public sealed class Nlm4CallbackHost : IAsyncDisposable
             where T : IXdrSerializable<T>
         {
             var reader = new XdrReader(arguments.Span);
+#if NET7_0_OR_GREATER
             return T.ReadFrom(ref reader);
+#else
+            return XdrDecoder.ReadFrom<T>(ref reader);
+#endif
         }
 
         private static RpcReplyPayload Encode<T>(T result)

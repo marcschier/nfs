@@ -2,12 +2,30 @@
 
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
-  <!-- Shipping libraries: multi-targeted, AOT-analyzed, packable, fully documented. -->
+  <!-- Shipping libraries: multi-targeted, AOT-analyzed (modern only), packable, fully documented. -->
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
-    <IsAotCompatible>true</IsAotCompatible>
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
+    <!-- NativeAOT is a modern-runtime concern; netstandard is a compatibility target. -->
+    <IsAotCompatible Condition="!$(TargetFramework.StartsWith('netstandard'))">true</IsAotCompatible>
     <IsPackable>true</IsPackable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Opt every shipping library into the netstandard polyfill set below. The XDR source
+         generator (also netstandard2.0, but a Roslyn analyzer) sets this to false. -->
+    <NetstandardPolyfills Condition="'$(NetstandardPolyfills)' == ''">true</NetstandardPolyfills>
+    <!-- Required by Polyfill so ArgumentNullException.ThrowIfNull / ThrowIfNullOrEmpty resolve. -->
+    <PolyArgumentExceptions>true</PolyArgumentExceptions>
   </PropertyGroup>
+
+  <!-- Source-only polyfills for the language/BCL features the modern TFMs have in-box. Polyfill
+       ships no assembly (PrivateAssets=all) and compiles out entirely on net8.0+. The BCL backports
+       are referenced only on the netstandard TFM that lacks them, so net8/9/10 are untouched. -->
+  <ItemGroup Condition="'$(NetstandardPolyfills)' == 'true' And $(TargetFramework.StartsWith('netstandard'))">
+    <PackageReference Include="Polyfill" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(NetstandardPolyfills)' == 'true' And '$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Memory" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
+  </ItemGroup>
 
 </Project>
