@@ -16,6 +16,18 @@
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
   </PropertyGroup>
 
+  <!-- Strong-name signing. Every assembly is full-signed with the committed key so the
+       shipped packages carry a stable identity. Strong naming is an identity, not a secret,
+       so the key is checked in (standard practice for OSS .NET libraries) and CI signs on
+       both Windows and Linux. NfsPublicKey is the key's full public key, used to grant
+       InternalsVisibleTo to the (also-signed) test assemblies. Public key token:
+       a5b998207a9d983e. -->
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)nfs.snk</AssemblyOriginatorKeyFile>
+    <NfsPublicKey>00240000048000009400000006020000002400005253413100040000010001000132D4F8D4B1762C4A6E103FB67F66E5544726EE7754A2B632DEBB43C839EEAC1689A7EB8DC659B89589745F3E22D3B67E8DFA8FE9729601D438186224712F21007C54E1EF1A7FBE1C1F85826A66900775E56106B73A4903462C72E9C209BD42CC50F499F25AF27DC59B141277F33E7678C21EEDA881388A9F732E249ADFCDB7</NfsPublicKey>
+  </PropertyGroup>
+
   <!-- Repository / package metadata (used only when packing). -->
   <PropertyGroup>
     <Product>Nfs</Product>

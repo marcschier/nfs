@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Nfs.Rpc.Tests" />
+    <InternalsVisibleTo Include="Nfs.Rpc.Tests" Key="$(NfsPublicKey)" />
   </ItemGroup>
 
   <ItemGroup>

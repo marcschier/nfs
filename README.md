@@ -18,6 +18,8 @@ dotnet add package Nfs
 
 `Nfs` bundles every component assembly (`Nfs.Client`, `Nfs.Server`, `Nfs.Rpc`, `Nfs.Xdr`, the protocol types, MOUNT, NLM/NSM) and has **no external NuGet dependencies** — NativeAOT trimming drops whatever you don't use. The individual `Nfs.*` packages are also published to this repository's [GitHub Packages](https://github.com/marcschier/nfs/packages) feed for fine-grained or internal consumption.
 
+All shipped assemblies are **strong-named** (public key token `a5b998207a9d983e`), so the packages can be referenced from strong-named projects.
+
 ## 📚 Documentation
 
 Developer documentation lives in [`docs/`](docs/README.md):
