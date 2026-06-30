@@ -56,6 +56,22 @@ public sealed class Nsm1Client
             new Nsm1Name { MonitorName = name },
             cancellationToken);
 
+    /// <summary>Unregisters every monitor callback that targets the given caller.</summary>
+    /// <param name="callback">The caller's RPC callback identity whose monitors are removed.</param>
+    /// <param name="cancellationToken">A token to cancel the call.</param>
+    /// <returns>The resulting server state.</returns>
+    public ValueTask<Nsm1Status> UnmonitorAllAsync(
+        Nsm1MyId callback,
+        CancellationToken cancellationToken = default) =>
+        CallAsync<Nsm1MyId, Nsm1Status>(Nsm1Procedure.UnmonitorAll, callback, cancellationToken);
+
+    /// <summary>Asks the monitor to simulate a crash, clearing its state and bumping the state number.</summary>
+    /// <param name="cancellationToken">A token to cancel the call.</param>
+    /// <returns>A task that completes when the server replies.</returns>
+    public async ValueTask SimulateCrashAsync(CancellationToken cancellationToken = default) =>
+        await CallAsync<XdrVoid, XdrVoid>(Nsm1Procedure.SimulateCrash, default, cancellationToken)
+            .ConfigureAwait(false);
+
     /// <summary>Queries the status of a monitored host.</summary>
     /// <param name="name">The host name.</param>
     /// <param name="cancellationToken">A token to cancel the call.</param>

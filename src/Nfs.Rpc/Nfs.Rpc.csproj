@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Nfs.Rpc.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Nfs.Xdr\Nfs.Xdr.csproj" />
     <ProjectReference Include="..\Nfs.Xdr.SourceGenerator\Nfs.Xdr.SourceGenerator.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
