@@ -51,6 +51,30 @@ public sealed class Nsm1LoopbackTests
         Assert.Equal("remote-host", await notified.Task.WaitAsync(Token));
     }
 
+    [Fact]
+    public async Task Null_Succeeds()
+    {
+        await using var server = StartServer();
+        Nsm1Client nsm = await ConnectAsync(server);
+
+        await nsm.NullAsync(Token); // Completes without throwing.
+    }
+
+    [Fact]
+    public async Task Unmonitor_RemovesMonitorAndAdvancesState()
+    {
+        await using var server = StartServer();
+        Nsm1Client nsm = await ConnectAsync(server);
+
+        Nsm1StatusResult monitor = await nsm.MonitorAsync(BuildMonitor("remote-host"), Token);
+        Nsm1Status unmonitor = await nsm.UnmonitorAsync("remote-host", Token);
+        Nsm1StatusResult stat = await nsm.StatAsync("remote-host", Token);
+
+        Assert.Equal(Nsm1Result.Success, monitor.Result);
+        Assert.NotEqual(monitor.State, unmonitor.State); // Unmonitor bumps the NSM state counter.
+        Assert.Equal(unmonitor.State, stat.State);        // A later Stat reflects the post-unmonitor state.
+    }
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     private static RpcServer StartServer(Action<string>? hostStateChanged = null)
@@ -65,4 +89,20 @@ public sealed class Nsm1LoopbackTests
         RpcClient rpc = await RpcClient.ConnectAsync(server.LocalEndPoint, Token);
         return new Nsm1Client(rpc);
     }
+
+    private static Nsm1Monitor BuildMonitor(string host) => new()
+    {
+        MonitorId = new Nsm1MonitorId
+        {
+            MonitorName = host,
+            MyId = new Nsm1MyId
+            {
+                MyName = "local-host",
+                Program = 100024,
+                Version = 1,
+                Procedure = 6,
+            },
+        },
+        Private = new byte[Nsm1.PrivateLength],
+    };
 }

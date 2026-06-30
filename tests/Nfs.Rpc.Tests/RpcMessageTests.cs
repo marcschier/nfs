@@ -53,6 +53,52 @@ public sealed class RpcMessageTests
     }
 
     [Fact]
+    public void AuthSys_Create_EncodesStampAndAuxiliaryGids()
+    {
+        OpaqueAuth credential = AuthSys.Create(
+            uid: 1,
+            gid: 2,
+            machineName: "m",
+            auxiliaryGids: [3u, 4u],
+            stamp: 9);
+
+        Assert.Equal(
+            Hex("00000009" +       // stamp = 9
+                "00000001 6D000000" + // machinename "m"
+                "00000001" +       // uid = 1
+                "00000002" +       // gid = 2
+                "00000002" +       // 2 auxiliary gids
+                "00000003" +       // gid 3
+                "00000004"),       // gid 4
+            credential.Body.ToArray());
+    }
+
+    [Fact]
+    public void AuthSys_Create_NullMachineName_Throws() =>
+        Assert.Throws<ArgumentNullException>(() => AuthSys.Create(1000, 1000, machineName: null!));
+
+    [Fact]
+    public void AuthSys_Create_MachineNameTooLong_Throws() =>
+        Assert.Throws<ArgumentException>(() => AuthSys.Create(1000, 1000, new string('a', AuthSys.MaxMachineNameLength + 1)));
+
+    [Fact]
+    public void AuthSys_Create_TooManyAuxiliaryGids_Throws() =>
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            AuthSys.Create(1000, 1000, "host", new uint[AuthSys.MaxAuxiliaryGids + 1]));
+
+    [Fact]
+    public void AuthSys_Create_AtLimits_Succeeds()
+    {
+        OpaqueAuth credential = AuthSys.Create(
+            1000,
+            1000,
+            new string('a', AuthSys.MaxMachineNameLength),
+            new uint[AuthSys.MaxAuxiliaryGids]);
+
+        Assert.Equal(AuthFlavor.Sys, credential.Flavor);
+    }
+
+    [Fact]
     public void RpcCallHeader_ProducesExpectedWireBytes()
     {
         var header = new RpcCallHeader(
