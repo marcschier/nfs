@@ -27,8 +27,18 @@ cleanup() {
   sudo rmdir "$MOUNT_DIR" 2>/dev/null || true
   sudo rmdir "$SECOND_MOUNT_DIR" 2>/dev/null || true
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    # Ask for a graceful shutdown, then bound the wait: poll for up to ~10s and
+    # force-kill if the server ignores SIGINT, so teardown can never hang the job.
     kill -INT "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || kill "$SERVER_PID" 2>/dev/null || true
+    for _ in {1..50}; do
+      kill -0 "$SERVER_PID" 2>/dev/null || break
+      sleep 0.2
+    done
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+      kill -KILL "$SERVER_PID" 2>/dev/null || true
+    fi
+    # $SERVER_PID is a direct child, so wait now reaps it promptly.
+    wait "$SERVER_PID" 2>/dev/null || true
   fi
   rm -rf "$WORK_DIR"
 }
