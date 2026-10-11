@@ -6,9 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup Label="Tooling">
-    <PackageVersion Include="Nerdbank.GitVersioning" Version="3.10.91" />
-    <PackageVersion Include="Roslynator.Analyzers" Version="5.0.0" />
-    <PackageVersion Include="Roslynator.Formatting.Analyzers" Version="5.0.0" />
+    <PackageVersion Include="Nerdbank.GitVersioning" Version="3.10.94" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="5.0.1" />
+    <PackageVersion Include="Roslynator.Formatting.Analyzers" Version="5.0.1" />
   </ItemGroup>
 
   <ItemGroup Label="Source generators">
@@ -17,24 +17,24 @@
 
   <!-- System.IO.Pipelines is in-box for net9.0+ but ships as a package on net8.0 and netstandard. -->
   <ItemGroup Label="Framework shims (net8.0 + netstandard)">
-    <PackageVersion Include="System.IO.Pipelines" Version="10.0.11" />
+    <PackageVersion Include="System.IO.Pipelines" Version="10.0.12" />
   </ItemGroup>
 
   <!-- netstandard2.0/2.1 polyfills. Polyfill is source-only (PrivateAssets=all); the rest are
        BCL backports referenced only on the relevant netstandard TFM, so net8/9/10 are untouched. -->
   <ItemGroup Label="netstandard polyfills">
-    <PackageVersion Include="Polyfill" Version="11.2.0" />
+    <PackageVersion Include="Polyfill" Version="11.4.3" />
     <PackageVersion Include="System.Memory" Version="4.6.3" />
     <PackageVersion Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
-    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Bcl.TimeProvider" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Bcl.TimeProvider" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Bcl.HashCode" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup Label="Testing">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-    <PackageVersion Include="xunit.v3" Version="4.0.0" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
   </ItemGroup>
 
   <ItemGroup Label="Benchmarking">

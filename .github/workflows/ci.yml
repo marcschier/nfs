@@ -23,10 +23,10 @@ jobs:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0 # Nerdbank.GitVersioning needs the full history.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6.0.0
         with:
           # The pinned SDK (global.json) builds every TFM; the extra runtimes let the
           # net8.0/net9.0 test executables run.
@@ -45,10 +45,10 @@ jobs:
     name: format check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6.0.0
         with:
           global-json-file: global.json
       - name: Verify formatting
@@ -58,10 +58,10 @@ jobs:
     name: NativeAOT publish smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6.0.0
         with:
           global-json-file: global.json
       - name: Install native toolchain
@@ -80,10 +80,10 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0 # Nerdbank.GitVersioning needs the full history.
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6.0.0
         with:
           global-json-file: global.json
       - name: Pack
