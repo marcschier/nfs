@@ -16,7 +16,7 @@ The whole stack ships as a single package on nuget.org:
 dotnet add package Nfs
 ```
 
-`Nfs` bundles every component assembly (`Nfs.Client`, `Nfs.Server`, `Nfs.Rpc`, `Nfs.Xdr`, the protocol types, MOUNT, NLM/NSM) and has **no external NuGet dependencies** — NativeAOT trimming drops whatever you don't use. The individual `Nfs.*` packages are also published to this repository's [GitHub Packages](https://github.com/marcschier/nfs/packages) feed for fine-grained or internal consumption.
+`Nfs` bundles every component assembly (`Nfs.Client`, `Nfs.Server`, `Nfs.Rpc`, `Nfs.Xdr`, the protocol types, MOUNT, NLM/NSM) and has **no external NuGet dependencies on net9.0/net10.0** — NativeAOT trimming drops whatever you don't use. Compatibility targets use the BCL backports described below. The individual `Nfs.*` packages are also published to this repository's [GitHub Packages](https://github.com/marcschier/nfs/packages) feed for fine-grained or internal consumption.
 
 All shipped assemblies are **strong-named** (public key token `a5b998207a9d983e`), so the packages can be referenced from strong-named projects.
 
@@ -41,7 +41,7 @@ Developer documentation lives in [`docs/`](docs/README.md):
 
 ## 🛠️ Building
 
-Building requires the **.NET 10 SDK** (pinned in `global.json`); it produces all target frameworks. The shipping libraries multi-target **net8.0, net9.0, net10.0, netstandard2.0, and netstandard2.1** — running the net8.0/net9.0 test executables additionally needs those runtimes installed. The net8.0/net9.0/net10.0 builds are reflection-free and NativeAOT-safe; the netstandard builds use source-only polyfills (the [`Polyfill`](https://www.nuget.org/packages/Polyfill) package plus BCL backports such as `System.Memory`) and a small reflection-based codec fallback, and are intended for compatibility (.NET Framework, Mono, Unity), not AOT. See [native-aot](docs/guides/native-aot.md).
+Building requires the **.NET 10 SDK** (10.0.401, pinned in `global.json`); it produces all target frameworks. The shipping libraries multi-target **net8.0, net9.0, net10.0, netstandard2.0, and netstandard2.1** — running the net8.0/net9.0 test executables additionally needs those runtimes installed. The net8.0/net9.0/net10.0 builds are reflection-free and NativeAOT-safe; the netstandard builds use source-only polyfills (the [`Polyfill`](https://www.nuget.org/packages/Polyfill) package plus BCL backports such as `System.Memory`) and a small reflection-based codec fallback, and are intended for compatibility (.NET Framework, Mono, Unity), not AOT. See [native-aot](docs/guides/native-aot.md).
 
 ```sh
 dotnet build Nfs.slnx -c Release
