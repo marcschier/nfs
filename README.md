@@ -41,7 +41,7 @@ Developer documentation lives in [`docs/`](docs/README.md):
 
 ## 🛠️ Building
 
-Building requires the **.NET 10 SDK** (10.0.401, pinned in `global.json`); it produces all target frameworks. The shipping libraries multi-target **net8.0, net9.0, net10.0, netstandard2.0, and netstandard2.1** — running the net8.0/net9.0 test executables additionally needs those runtimes installed. The net8.0/net9.0/net10.0 builds are reflection-free and NativeAOT-safe; the netstandard builds use source-only polyfills (the [`Polyfill`](https://www.nuget.org/packages/Polyfill) package plus BCL backports such as `System.Memory`) and a small reflection-based codec fallback, and are intended for compatibility (.NET Framework, Mono, Unity), not AOT. See [native-aot](docs/guides/native-aot.md).
+Building requires the **.NET 10 SDK** (10.0.403, pinned in `global.json`); it produces all target frameworks. The shipping libraries multi-target **net8.0, net9.0, net10.0, netstandard2.0, and netstandard2.1** — running the net8.0/net9.0 test executables additionally needs those runtimes installed. The net8.0/net9.0/net10.0 builds are reflection-free and NativeAOT-safe; the netstandard builds use source-only polyfills (the [`Polyfill`](https://www.nuget.org/packages/Polyfill) package plus BCL backports such as `System.Memory`) and a small reflection-based codec fallback, and are intended for compatibility (.NET Framework, Mono, Unity), not AOT. See [native-aot](docs/guides/native-aot.md).
 
 ```sh
 dotnet build Nfs.slnx -c Release
