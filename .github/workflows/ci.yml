@@ -88,9 +88,10 @@ jobs:
           global-json-file: global.json
       - name: Pack
         run: dotnet pack Nfs.slnx -c Release -o artifacts
+      - name: Verify package IDs and versions
+        run: python3 eng/verify-packages.py artifacts "$GITHUB_REF_NAME"
       - name: Push to GitHub Packages
         run: >
           dotnet nuget push "artifacts/*.nupkg"
           --source https://nuget.pkg.github.com/marcschier/index.json
           --api-key ${{ secrets.GITHUB_TOKEN }}
-          --skip-duplicate
