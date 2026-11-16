@@ -41,7 +41,7 @@ jobs:
       id-token: write # Required for NuGet trusted publishing (OIDC).
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-dotnet@v6.0.0
+      - uses: actions/setup-dotnet@v6.1.0
         with:
           global-json-file: global.json
 
